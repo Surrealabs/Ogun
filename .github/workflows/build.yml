@@ -82,7 +82,6 @@ jobs:
               strip build/rover_server
 
               echo "rover_server: $(du -h build/rover_server | cut -f1)"
-              file build/rover_server
             '
 
       # ---------- Build Teensy firmware (.hex) -----------------
