@@ -1,0 +1,50 @@
+# ============================================================
+#  Rover Configuration File
+#  /etc/rover/rover.conf
+#  Lines starting with # are comments.
+# ============================================================
+
+# --- Teensy USB serial bridge ---
+# Find the port with: ls /dev/ttyACM*
+teensy_port    = /dev/ttyACM0
+serial_baud    = 115200
+
+# --- BLE ---
+ble_name       = Rover
+# Use "hci0" unless you have multiple Bluetooth adapters
+ble_device     = hci0
+
+# --- WiFi control ---
+ws_port        = 9000
+
+# --- Cameras (V4L2) ---
+# ls /dev/video* to discover devices
+cam0_device    = /dev/video0
+cam1_device    = /dev/video2
+cam0_port      = 8081
+cam1_port      = 8082
+cam_width      = 640
+cam_height     = 480
+cam_fps        = 30
+# JPEG quality 0-100 (higher = better quality but more bandwidth)
+cam_jpeg_quality = 80
+
+# --- Drive parameters ---
+# Maximum motor speed sent to Teensy (0.0 - 1.0)
+max_motor_speed = 1.0
+# Joystick dead zone (values smaller than this are treated as 0)
+deadband        = 0.05
+
+# --- Telemetry ---
+# How many times per second to poll Teensy for sensor data
+telemetry_hz    = 10
+
+# --- Audio playback ---
+audio_device   = default
+audio_dir      = /opt/rover/sounds
+
+# --- Teensy OTA flashing ---
+# Path to teensy_loader_cli (installed by install.sh)
+ota_flash_cmd  = /usr/local/bin/teensy_loader_cli
+# Your Teensy model: TEENSY41, TEENSY40, TEENSY36, TEENSYLC ...
+teensy_mmcu    = TEENSY41

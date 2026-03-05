@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Rover Control</title>
+<style>
+/* ============================================================
+   Rover Web UI — Dark theme, responsive landscape layout
+   ============================================================ */
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #c9d1d9; --text-dim: #8b949e; --accent: #58a6ff;
+  --danger: #f85149; --success: #3fb950; --warn: #d29922;
+}
+*, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px; touch-action: none; user-select: none; }
+
+/* ---- Top bar ---- */
+#topbar {
+  display:flex; align-items:center; gap:10px; padding:4px 12px;
+  background: var(--surface); border-bottom:1px solid var(--border);
+  height: 36px; flex-shrink:0;
+}
+#topbar .status-dot { width:10px; height:10px; border-radius:50%; background:var(--danger); flex-shrink:0; }
+#topbar .status-dot.connected { background: var(--success); }
+#topbar .status-text { font-size:12px; color:var(--text-dim); }
+#topbar .title { font-weight:700; font-size:15px; }
+#topbar .spacer { flex:1; }
+.btn { padding:4px 12px; border:1px solid var(--border); border-radius:4px; background:var(--surface);
+  color:var(--text); cursor:pointer; font-size:12px; }
+.btn:hover { background: var(--border); }
+.btn.danger { border-color:var(--danger); color:var(--danger); }
+.btn.danger:hover { background:var(--danger); color:#fff; }
+.btn.accent { border-color:var(--accent); color:var(--accent); }
+
+/* ---- Main layout ---- */
+#app { display:flex; flex-direction:column; height:100vh; }
+#main { display:flex; flex:1; overflow:hidden; }
+
+/* ---- Sidebar ---- */
+#sidebar {
+  width:200px; flex-shrink:0; background:var(--surface); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; padding:8px; gap:6px; overflow-y:auto;
+}
+.telem-grid { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+.telem-card { background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:6px;
+  text-align:center; }
+.telem-label { font-size:10px; color:var(--text-dim); text-transform:uppercase; }
+.telem-value { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+.gpio-grid { display:flex; flex-wrap:wrap; gap:4px; }
+.gpio-btn { flex:1; min-width:80px; padding:6px; border:1px solid var(--border); border-radius:4px;
+  background:var(--bg); color:var(--text); text-align:center; cursor:pointer; font-size:11px; }
+.gpio-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.section-title { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px;
+  margin-top:4px; }
+
+/* ---- Center area (cameras + joysticks) ---- */
+#center { flex:1; display:flex; flex-direction:column; position:relative; }
+#cam-row { display:flex; flex:1; overflow:hidden; }
+.cam-pane { flex:1; position:relative; background:#000; overflow:hidden; }
+.cam-pane img { width:100%; height:100%; object-fit:contain; }
+.cam-label { position:absolute; top:4px; left:8px; font-size:10px; color:var(--text-dim);
+  background:rgba(0,0,0,0.6); padding:2px 6px; border-radius:3px; }
+.cam-divider { width:2px; background:var(--border); }
+
+/* ---- Joystick overlay row ---- */
+#joy-row {
+  display:flex; justify-content:space-between; padding:8px 20px;
+  height:180px; flex-shrink:0; background:rgba(0,0,0,0.3);
+}
+.joy-container { width:160px; height:160px; position:relative; }
+
+/* ---- Joystick canvas ---- */
+canvas.joystick { width:160px; height:160px; cursor:grab; }
+
+/* ---- E-STOP overlay ---- */
+#estop-btn {
+  position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+  width:80px; height:80px; border-radius:50%; background:var(--danger); border:3px solid #fff;
+  color:#fff; font-weight:900; font-size:13px; cursor:pointer; z-index:20;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow: 0 0 20px rgba(248,81,73,0.5);
+  transition: transform 0.1s;
+}
+#estop-btn:active { transform: translateX(-50%) scale(0.9); }
+
+/* ---- Connection dialog ---- */
+#connect-dialog {
+  position:fixed; inset:0; background:rgba(0,0,0,0.8); display:flex; align-items:center;
+  justify-content:center; z-index:100;
+}
+#connect-dialog.hidden { display:none; }
+#connect-box {
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:24px; width:340px; text-align:center;
+}
+#connect-box h2 { margin-bottom:16px; font-size:20px; }
+#connect-box input { width:100%; padding:8px 12px; margin-bottom:12px; border:1px solid var(--border);
+  border-radius:4px; background:var(--bg); color:var(--text); font-size:14px; }
+#connect-box .hint { font-size:11px; color:var(--text-dim); margin-top:8px; }
+
+/* ---- OTA dialog ---- */
+#ota-dialog { position:fixed; inset:0; background:rgba(0,0,0,0.8); display:flex; align-items:center;
+  justify-content:center; z-index:90; }
+#ota-dialog.hidden { display:none; }
+#ota-box { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:24px; width:380px; }
+#ota-box h2 { margin-bottom:16px; }
+#ota-progress { width:100%; height:20px; margin:12px 0; }
+#ota-status { font-size:12px; color:var(--text-dim); min-height:18px; }
+
+/* ---- Log panel ---- */
+#log-panel {
+  position:fixed; bottom:0; right:0; width:320px; max-height:200px; background:var(--surface);
+  border:1px solid var(--border); border-radius:6px 0 0 0; font-size:11px; font-family:monospace;
+  overflow-y:auto; padding:6px; z-index:50; display:none;
+}
+#log-panel.open { display:block; }
+#log-panel .entry { color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ---- Gamepad indicator ---- */
+.gamepad-icon { font-size:14px; opacity:0.3; }
+.gamepad-icon.active { opacity:1; color:var(--success); }
+
+/* ---- Responsive: portrait phone ---- */
+@media (max-width:700px) {
+  #sidebar { display:none; }
+  #joy-row { height:140px; padding:4px 10px; }
+  .joy-container { width:130px; height:130px; }
+  canvas.joystick { width:130px; height:130px; }
+  #estop-btn { width:60px; height:60px; font-size:11px; bottom:10px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ---- Top bar ---- -->
+<div id="topbar">
+  <span class="title">Rover</span>
+  <span class="status-dot" id="statusDot"></span>
+  <span class="status-text" id="statusText">Disconnected</span>
+  <span class="spacer"></span>
+  <span class="gamepad-icon" id="gamepadIcon" title="Gamepad">&#127918;</span>
+  <button class="btn" id="btnLog" onclick="toggleLog()">Log</button>
+  <button class="btn accent" id="btnOta">&#11014; FW</button>
+  <button class="btn danger" id="btnDisconnect" onclick="disconnect()">Disconnect</button>
+</div>
+
+<!-- ---- Main ---- -->
+<div id="main">
+
+  <!-- Sidebar: telemetry + GPIO -->
+  <div id="sidebar">
+    <div class="section-title">Telemetry</div>
+    <div class="telem-grid">
+      <div class="telem-card"><div class="telem-label">Voltage</div><div class="telem-value" id="tvVolt">--</div></div>
+      <div class="telem-card"><div class="telem-label">Current</div><div class="telem-value" id="tvCurr">--</div></div>
+      <div class="telem-card"><div class="telem-label">Temp</div><div class="telem-value" id="tvTemp">--</div></div>
+      <div class="telem-card"><div class="telem-label">EncL</div><div class="telem-value" id="tvEncL">0</div></div>
+      <div class="telem-card"><div class="telem-label">EncR</div><div class="telem-value" id="tvEncR">0</div></div>
+      <div class="telem-card"><div class="telem-label">Latency</div><div class="telem-value" id="tvLat">--</div></div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px">GPIO</div>
+    <div class="gpio-grid">
+      <div class="gpio-btn" data-pin="horn" onclick="gpioToggle(this)">&#128227; Horn</div>
+      <div class="gpio-btn" data-pin="led_fwd" onclick="gpioToggle(this)">&#128161; Fwd</div>
+      <div class="gpio-btn" data-pin="led_rev" onclick="gpioToggle(this)">&#128308; Rev</div>
+      <div class="gpio-btn" data-pin="aux1" onclick="gpioToggle(this)">AUX 1</div>
+      <div class="gpio-btn" data-pin="aux2" onclick="gpioToggle(this)">AUX 2</div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px">Audio</div>
+    <div class="gpio-grid">
+      <div class="gpio-btn" onclick="playAudio('horn.wav')">&#128266; Horn SFX</div>
+      <div class="gpio-btn" onclick="playAudio('siren.wav')">&#128680; Siren</div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px">Drive</div>
+    <div style="font-size:11px;color:var(--text-dim)">
+      <div>L: <span id="tvDriveL">0.00</span> &nbsp; R: <span id="tvDriveR">0.00</span></div>
+      <div style="margin-top:2px">Throttle: <span id="tvThrottle">0.00</span> &nbsp; Rot: <span id="tvRot">0.00</span></div>
+    </div>
+  </div>
+
+  <!-- Center: cameras + joysticks -->
+  <div id="center">
+    <div id="cam-row">
+      <div class="cam-pane">
+        <span class="cam-label">CAM 0 (Front)</span>
+        <img id="cam0" alt="Camera 0">
+      </div>
+      <div class="cam-divider"></div>
+      <div class="cam-pane">
+        <span class="cam-label">CAM 1 (Rear)</span>
+        <img id="cam1" alt="Camera 1">
+      </div>
+    </div>
+    <div id="joy-row">
+      <div class="joy-container">
+        <canvas class="joystick" id="joyLeft" width="320" height="320"></canvas>
+      </div>
+      <div class="joy-container">
+        <canvas class="joystick" id="joyRight" width="320" height="320"></canvas>
+      </div>
+    </div>
+    <button id="estop-btn" onclick="sendEstop()">E-STOP</button>
+  </div>
+</div>
+</div>
+
+<!-- ---- Connect dialog ---- -->
+<div id="connect-dialog">
+  <div id="connect-box">
+    <h2>&#128752; Connect to Rover</h2>
+    <input id="ipInput" type="text" placeholder="Rover IP (e.g. 192.168.1.50)" autofocus>
+    <button class="btn accent" style="width:100%;padding:10px" onclick="doConnect()">Connect</button>
+    <div class="hint">Enter the IP of the BTT Pi. WebSocket :9000, Cameras :8081/:8082</div>
+    <div class="hint" style="margin-top:4px" id="connectErr"></div>
+  </div>
+</div>
+
+<!-- ---- OTA dialog ---- -->
+<div id="ota-dialog" class="hidden">
+  <div id="ota-box">
+    <h2>&#11014; Teensy Firmware Update</h2>
+    <input type="file" id="otaFile" accept=".hex,.bin">
+    <div id="ota-file-name" style="font-size:12px;color:var(--text-dim);margin:8px 0">No file selected</div>
+    <button class="btn accent" id="btnFlash" onclick="startOta()" disabled>Flash Teensy</button>
+    <button class="btn" onclick="closeOta()" style="margin-left:8px">Cancel</button>
+    <progress id="ota-progress" value="0" max="100" style="width:100%;margin-top:12px"></progress>
+    <div id="ota-status">Idle</div>
+  </div>
+</div>
+
+<!-- ---- Log panel ---- -->
+<div id="log-panel"><div id="logEntries"></div></div>
+
+<script>
+// ============================================================
+//  ROVER WEB UI — JavaScript Controller
+// ============================================================
+
+// ---- State ----
+let ws = null;
+let roverIp = '';
+let connected = false;
+let lastTelem = {};
+let lastSendTime = 0;
+
+// ---- DOM refs ----
+const $ = id => document.getElementById(id);
+const statusDot  = $('statusDot');
+const statusText = $('statusText');
+const connectDialog = $('connect-dialog');
+const ipInput    = $('ipInput');
+const connectErr = $('connectErr');
+
+// ---- Log ----
+function addLog(msg) {
+  const el = $('logEntries');
+  const d = document.createElement('div');
+  d.className = 'entry';
+  const t = new Date().toLocaleTimeString();
+  d.textContent = `[${t}] ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+  if (el.children.length > 200) el.removeChild(el.firstChild);
+}
+function toggleLog() { $('log-panel').classList.toggle('open'); }
+
+// ---- Auto-detect rover IP ----
+// If page was served from the rover's WebUI server, use that host
+(function autoDetectIp() {
+  const host = location.hostname;
+  if (host && host !== 'localhost' && host !== '127.0.0.1' && host !== '') {
+    ipInput.value = host;
+  }
+  // Also try auto-connect if served from rover
+  if (host && host !== 'localhost' && host !== '127.0.0.1' && host !== '' && location.port === '8080') {
+    setTimeout(() => doConnect(), 300);
+  }
+})();
+
+// ---- Connection ----
+function doConnect() {
+  roverIp = ipInput.value.trim();
+  if (!roverIp) { connectErr.textContent = 'Enter an IP address'; return; }
+  connectErr.textContent = 'Connecting...';
+  addLog('Connecting to ' + roverIp);
+
+  if (ws) { ws.close(); ws = null; }
+  try {
+    ws = new WebSocket(`ws://${roverIp}:9000`);
+  } catch (e) {
+    connectErr.textContent = 'WebSocket failed: ' + e.message;
+    return;
+  }
+  ws.onopen = () => {
+    connected = true;
+    connectDialog.classList.add('hidden');
+    statusDot.classList.add('connected');
+    statusText.textContent = 'Connected (' + roverIp + ')';
+    addLog('Connected');
+    startCameras();
+  };
+  ws.onmessage = (ev) => handleMessage(ev.data);
+  ws.onerror = () => { connectErr.textContent = 'Connection error'; };
+  ws.onclose = () => {
+    connected = false;
+    statusDot.classList.remove('connected');
+    statusText.textContent = 'Disconnected';
+    addLog('Disconnected');
+    stopCameras();
+    connectDialog.classList.remove('hidden');
+  };
+}
+
+function disconnect() {
+  if (ws) ws.close();
+  ws = null;
+  connected = false;
+  connectDialog.classList.remove('hidden');
+}
+
+function sendJson(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+// ---- Listen for Enter key in IP input ----
+ipInput.addEventListener('keydown', e => { if (e.key === 'Enter') doConnect(); });
+
+// ---- Incoming messages ----
+function handleMessage(raw) {
+  try {
+    const msg = JSON.parse(raw);
+    if (msg.type === 'telemetry') {
+      lastTelem = msg;
+      $('tvVolt').textContent  = (msg.volt || 0).toFixed(1) + 'V';
+      $('tvCurr').textContent  = (msg.curr || 0).toFixed(2) + 'A';
+      $('tvTemp').textContent  = (msg.temp || 0).toFixed(0) + '°';
+      $('tvEncL').textContent  = msg.enc_l || 0;
+      $('tvEncR').textContent  = msg.enc_r || 0;
+      // latency estimate (if we sent a status req)
+      if (lastSendTime) {
+        $('tvLat').textContent = (Date.now() - lastSendTime) + 'ms';
+      }
+    } else if (msg.type === 'ota_prog') {
+      $('ota-progress').value = msg.pct;
+      $('ota-status').textContent = `${msg.pct}% — ${msg.msg}`;
+      if (msg.pct === 100 || msg.pct === 0) $('btnFlash').disabled = false;
+    } else if (msg.type === 'error') {
+      addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
+    }
+  } catch (e) {
+    addLog('RX parse error: ' + raw.slice(0, 80));
+  }
+}
+
+// ---- Cameras (MJPEG) ----
+function startCameras() {
+  $('cam0').src = `http://${roverIp}:8081/`;
+  $('cam1').src = `http://${roverIp}:8082/`;
+}
+function stopCameras() {
+  $('cam0').src = '';
+  $('cam1').src = '';
+}
+
+// ---- GPIO buttons ----
+function gpioToggle(el) {
+  const pin = el.dataset.pin;
+  const active = el.classList.toggle('active');
+  sendJson({ type: 'gpio', pin: pin, state: active });
+  addLog(`GPIO ${pin} → ${active}`);
+}
+
+// ---- Audio ----
+function playAudio(file) { sendJson({ type: 'audio', file: file }); addLog('Audio: ' + file); }
+
+// ---- E-STOP ----
+function sendEstop() { sendJson({ type: 'estop' }); addLog('E-STOP!'); }
+
+// ---- OTA ----
+$('btnOta').onclick = () => $('ota-dialog').classList.remove('hidden');
+function closeOta() { $('ota-dialog').classList.add('hidden'); }
+$('otaFile').onchange = function() {
+  const f = this.files[0];
+  if (f) {
+    $('ota-file-name').textContent = f.name + ' (' + f.size + ' bytes)';
+    $('btnFlash').disabled = false;
+  }
+};
+async function startOta() {
+  const f = $('otaFile').files[0];
+  if (!f) return;
+  $('btnFlash').disabled = true;
+  $('ota-status').textContent = 'Reading file...';
+  const buf = await f.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const chunkSize = 512;
+  const total = Math.ceil(bytes.length / chunkSize);
+  sendJson({ type: 'ota_begin', total: total });
+  addLog(`OTA: sending ${total} chunks (${bytes.length} bytes)`);
+  $('ota-status').textContent = `Uploading 0/${total}...`;
+
+  for (let i = 0; i < total; i++) {
+    const slice = bytes.slice(i * chunkSize, Math.min((i + 1) * chunkSize, bytes.length));
+    const b64 = btoa(String.fromCharCode(...slice));
+    sendJson({ type: 'ota', chunk: i, data: b64 });
+    if (i % 20 === 0) {
+      $('ota-status').textContent = `Uploading ${i}/${total}...`;
+      await new Promise(r => setTimeout(r, 10)); // yield to UI
+    }
+  }
+  $('ota-status').textContent = `All ${total} chunks sent — waiting for flash...`;
+  addLog('OTA: all chunks sent');
+}
+
+// ============================================================
+//  VIRTUAL JOYSTICK — Canvas-based, multi-touch
+// ============================================================
+class Joystick {
+  constructor(canvas, onMove) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.onMove = onMove;
+    this.cx = canvas.width / 2;
+    this.cy = canvas.height / 2;
+    this.outerR = canvas.width * 0.44;
+    this.innerR = this.outerR * 0.40;
+    this.knobX = this.cx;
+    this.knobY = this.cy;
+    this.x = 0; this.y = 0;
+    this.activeId = null;
+
+    canvas.addEventListener('touchstart', e => this._ts(e), { passive: false });
+    canvas.addEventListener('touchmove',  e => this._tm(e), { passive: false });
+    canvas.addEventListener('touchend',   e => this._te(e), { passive: false });
+    canvas.addEventListener('touchcancel', e => this._te(e), { passive: false });
+    canvas.addEventListener('mousedown', e => this._md(e));
+    canvas.addEventListener('mousemove', e => this._mm(e));
+    canvas.addEventListener('mouseup',   e => this._mu(e));
+    canvas.addEventListener('mouseleave', e => this._mu(e));
+    this._mouseDown = false;
+    this.draw();
+  }
+
+  _ts(e) { e.preventDefault(); const t = e.changedTouches[0]; this.activeId = t.identifier; this._move(t); }
+  _tm(e) { e.preventDefault(); for (const t of e.changedTouches) { if (t.identifier === this.activeId) this._move(t); } }
+  _te(e) { for (const t of e.changedTouches) { if (t.identifier === this.activeId) { this._recenter(); this.activeId = null; } } }
+  _md(e) { this._mouseDown = true; this._move(e); }
+  _mm(e) { if (this._mouseDown) this._move(e); }
+  _mu(e) { if (this._mouseDown) { this._mouseDown = false; this._recenter(); } }
+
+  _getPos(e) {
+    const r = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / r.width;
+    const scaleY = this.canvas.height / r.height;
+    return {
+      x: (e.clientX - r.left) * scaleX,
+      y: (e.clientY - r.top)  * scaleY
+    };
+  }
+
+  _move(e) {
+    const p = this._getPos(e);
+    let dx = p.x - this.cx, dy = p.y - this.cy;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > this.outerR) { const s = this.outerR / dist; dx *= s; dy *= s; }
+    this.knobX = this.cx + dx;
+    this.knobY = this.cy + dy;
+    this.x = dx / this.outerR;
+    this.y = -(dy / this.outerR); // invert Y so up = positive
+    this.onMove(this.x, this.y);
+    this.draw();
+  }
+
+  _recenter() {
+    this.knobX = this.cx; this.knobY = this.cy;
+    this.x = 0; this.y = 0;
+    this.onMove(0, 0);
+    this.draw();
+  }
+
+  draw() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // Outer ring
+    ctx.beginPath(); ctx.arc(this.cx, this.cy, this.outerR, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(88,166,255,0.5)'; ctx.lineWidth = 3; ctx.stroke();
+    // Cross
+    ctx.beginPath();
+    ctx.moveTo(this.cx - this.outerR, this.cy); ctx.lineTo(this.cx + this.outerR, this.cy);
+    ctx.moveTo(this.cx, this.cy - this.outerR); ctx.lineTo(this.cx, this.cy + this.outerR);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1; ctx.stroke();
+    // Knob
+    ctx.beginPath(); ctx.arc(this.knobX, this.knobY, this.innerR, 0, Math.PI*2);
+    const grad = ctx.createRadialGradient(this.knobX, this.knobY, 0, this.knobX, this.knobY, this.innerR);
+    grad.addColorStop(0, 'rgba(88,166,255,0.9)');
+    grad.addColorStop(1, 'rgba(88,166,255,0.4)');
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
+// ---- Instantiate joysticks ----
+let leftY = 0, rightX = 0;
+const joyL = new Joystick($('joyLeft'),  (x, y) => { leftY = y;  sendDrive(); });
+const joyR = new Joystick($('joyRight'), (x, y) => { rightX = x; sendDrive(); });
+
+// ---- Drive command throttle (max 30 Hz) ----
+let driveInterval = null;
+let lastDriveJson = '';
+function sendDrive() {
+  const fwd = Math.abs(leftY)  < 0.04 ? 0 : leftY;
+  const rot = Math.abs(rightX) < 0.04 ? 0 : rightX;
+  const json = JSON.stringify({ type: 'drive', x: 0, y: parseFloat(fwd.toFixed(3)), rot: parseFloat(rot.toFixed(3)) });
+  if (json === lastDriveJson) return; // dedupe
+  lastDriveJson = json;
+  $('tvThrottle').textContent = fwd.toFixed(2);
+  $('tvRot').textContent = rot.toFixed(2);
+  // Tank mixing preview
+  const l = Math.max(-1, Math.min(1, fwd + rot));
+  const r = Math.max(-1, Math.min(1, fwd - rot));
+  $('tvDriveL').textContent = l.toFixed(2);
+  $('tvDriveR').textContent = r.toFixed(2);
+}
+
+// Send drive at fixed interval
+driveInterval = setInterval(() => {
+  if (connected && lastDriveJson) {
+    try { ws.send(lastDriveJson); } catch(e) {}
+  }
+}, 33); // ~30 Hz
+
+// ---- Keyboard controls ----
+const keysDown = new Set();
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  keysDown.add(e.key);
+  updateKeyDrive();
+  if (e.key === ' ') { e.preventDefault(); sendEstop(); }
+});
+document.addEventListener('keyup', e => {
+  keysDown.delete(e.key);
+  updateKeyDrive();
+});
+function updateKeyDrive() {
+  let y = 0, r = 0;
+  if (keysDown.has('w') || keysDown.has('ArrowUp'))    y += 1;
+  if (keysDown.has('s') || keysDown.has('ArrowDown'))  y -= 1;
+  if (keysDown.has('a') || keysDown.has('ArrowLeft'))  r -= 0.6;
+  if (keysDown.has('d') || keysDown.has('ArrowRight')) r += 0.6;
+  leftY = y; rightX = r;
+  sendDrive();
+}
+
+// ============================================================
+//  GAMEPAD API — use a physical gamepad/controller
+// ============================================================
+let gamepadIndex = null;
+function pollGamepad() {
+  const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for (const g of gps) {
+    if (g && g.connected) { gp = g; gamepadIndex = g.index; break; }
+  }
+  $('gamepadIcon').classList.toggle('active', !!gp);
+  if (!gp) { requestAnimationFrame(pollGamepad); return; }
+
+  // Standard mapping: left stick Y = axis 1, right stick X = axis 2
+  const rawY = -gp.axes[1]; // invert so push-forward = positive
+  const rawR = gp.axes[2] || gp.axes[0]; // right stick X, fallback to left X
+  const deadzone = 0.08;
+  leftY  = Math.abs(rawY) < deadzone ? 0 : rawY;
+  rightX = Math.abs(rawR) < deadzone ? 0 : rawR;
+  sendDrive();
+
+  // Buttons: A = horn, B = estop, triggers = aux
+  if (gp.buttons[0] && gp.buttons[0].pressed) sendJson({ type: 'gpio', pin: 'horn', state: true });
+  if (gp.buttons[1] && gp.buttons[1].pressed) sendEstop();
+
+  requestAnimationFrame(pollGamepad);
+}
+window.addEventListener('gamepadconnected', e => {
+  addLog('Gamepad connected: ' + e.gamepad.id);
+  gamepadIndex = e.gamepad.index;
+  pollGamepad();
+});
+window.addEventListener('gamepaddisconnected', e => {
+  addLog('Gamepad disconnected');
+  gamepadIndex = null;
+  $('gamepadIcon').classList.remove('active');
+});
+// Start polling in case gamepad already connected
+requestAnimationFrame(pollGamepad);
+
+// ---- Periodic telemetry request ----
+setInterval(() => {
+  if (connected) {
+    lastSendTime = Date.now();
+    sendJson({ type: 'status' });
+  }
+}, 500);
+
+// ---- Window unload: stop motors ----
+window.addEventListener('beforeunload', () => {
+  if (connected) sendEstop();
+});
+
+// ---- Visibility change: stop when tab hidden ----
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && connected) {
+    sendEstop();
+    addLog('Tab hidden — E-STOP sent');
+  }
+});
+</script>
+</body>
+</html>

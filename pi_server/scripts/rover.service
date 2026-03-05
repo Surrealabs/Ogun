@@ -1,0 +1,27 @@
+[Unit]
+Description=Rover Control Server (BLE + WiFi)
+Documentation=https://github.com/yourname/rover
+After=network.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/sh -c 'until systemctl is-active bluetooth; do sleep 1; done'
+ExecStart=/usr/local/bin/rover_server /etc/rover/rover.conf
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+WorkingDirectory=/opt/rover
+
+# Log to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rover
+
+# Resource limits
+LimitRTPRIO=5
+LimitNICE=-5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,507 @@
+#!/usr/bin/env bash
+# ============================================================
+#  ogun — Unified CLI for the Ogun Rover build system
+#
+#  Usage:
+#    ./ogun build [all|pi|teensy|android]
+#    ./ogun flash [teensy]
+#    ./ogun deploy <pi-ip> [--user root]
+#    ./ogun monitor [serial|rover]
+#    ./ogun status <pi-ip>
+#    ./ogun clean [all|pi|teensy|android|package]
+#    ./ogun info
+#    ./ogun help
+#
+#  This is the primary entry point for all Ogun build/deploy
+#  operations. It wraps Make, PlatformIO, and SSH into a
+#  single ergonomic interface.
+# ============================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$SCRIPT_DIR"
+PI_DIR="$ROOT_DIR/pi_server"
+TEENSY_DIR="$ROOT_DIR/teensy_firmware"
+ANDROID_DIR="$ROOT_DIR/android_app"
+
+# GitHub repo for releases (owner/repo format)
+# Set this to your actual repo:
+GITHUB_REPO="${OGUN_GITHUB_REPO:-surreallabs/ogun}"
+
+# Colors (disabled if not a terminal)
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[0;33m'
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    NC='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' CYAN='' BOLD='' NC=''
+fi
+
+# ---------- Helpers ------------------------------------------
+info()  { echo -e "${CYAN}[ogun]${NC} $*"; }
+ok()    { echo -e "${GREEN}[ogun]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[warn]${NC} $*"; }
+err()   { echo -e "${RED}[error]${NC} $*" >&2; }
+die()   { err "$@"; exit 1; }
+
+need_cmd() {
+    command -v "$1" >/dev/null 2>&1 || die "'$1' not found. $2"
+}
+
+# ---------- Commands -----------------------------------------
+
+cmd_build() {
+    local target="${1:-all}"
+    case "$target" in
+        all)
+            cmd_build pi
+            cmd_build teensy
+            ;;
+        pi)
+            info "Building rover_server..."
+            need_cmd cmake "Install: sudo apt install cmake"
+            need_cmd ninja "Install: sudo apt install ninja-build"
+            make -C "$ROOT_DIR" pi
+            ;;
+        teensy)
+            info "Building Teensy firmware..."
+            need_cmd pio "Install: pip install platformio"
+            make -C "$ROOT_DIR" teensy
+            ;;
+        android)
+            info "Building Android APK (debug)..."
+            if [ ! -f "$ANDROID_DIR/gradlew" ]; then
+                die "gradlew not found in android_app/. Open in Android Studio first."
+            fi
+            make -C "$ROOT_DIR" android
+            ;;
+        android-release)
+            info "Building Android APK (release)..."
+            make -C "$ROOT_DIR" android-release
+            ;;
+        cross)
+            info "Cross-compiling rover_server for ARM64..."
+            need_cmd aarch64-linux-gnu-g++ "Install: sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
+            make -C "$ROOT_DIR" cross
+            ;;
+        *)
+            die "Unknown build target: $target (options: all, pi, teensy, android, cross)"
+            ;;
+    esac
+}
+
+cmd_flash() {
+    local target="${1:-teensy}"
+    case "$target" in
+        teensy)
+            info "Flashing Teensy via USB..."
+            need_cmd pio "Install: pip install platformio"
+            make -C "$ROOT_DIR" flash-teensy
+            ;;
+        *)
+            die "Unknown flash target: $target (options: teensy)"
+            ;;
+    esac
+}
+
+cmd_deploy() {
+    local pi_ip="${1:-}"
+    local pi_user="root"
+
+    # Parse optional --user flag
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --user) pi_user="${2:-root}"; shift 2 ;;
+            *)      die "Unknown flag: $1" ;;
+        esac
+    done
+
+    if [ -z "$pi_ip" ]; then
+        die "Usage: ogun deploy <pi-ip> [--user root]"
+    fi
+
+    # Handle user@ip format
+    if [[ "$pi_ip" == *@* ]]; then
+        pi_user="${pi_ip%%@*}"
+        pi_ip="${pi_ip#*@}"
+    fi
+
+    info "Deploying to ${pi_user}@${pi_ip}..."
+    make -C "$ROOT_DIR" deploy PI="$pi_ip" PI_USER="$pi_user"
+}
+
+cmd_package() {
+    info "Creating update package..."
+    make -C "$ROOT_DIR" package
+}
+
+cmd_monitor() {
+    local target="${1:-serial}"
+    case "$target" in
+        serial|teensy)
+            info "Monitoring Teensy serial output..."
+            need_cmd pio "Install: pip install platformio"
+            cd "$TEENSY_DIR" && pio device monitor --baud 115200
+            ;;
+        rover)
+            local pi_ip="${2:-}"
+            if [ -z "$pi_ip" ]; then
+                die "Usage: ogun monitor rover <pi-ip>"
+            fi
+            info "Monitoring rover service on $pi_ip..."
+            ssh "root@$pi_ip" journalctl -u rover -f --no-pager
+            ;;
+        *)
+            die "Unknown monitor target: $target (options: serial, rover)"
+            ;;
+    esac
+}
+
+cmd_status() {
+    local pi_ip="${1:-}"
+    if [ -z "$pi_ip" ]; then
+        die "Usage: ogun status <pi-ip>"
+    fi
+
+    local pi_user="root"
+    if [[ "$pi_ip" == *@* ]]; then
+        pi_user="${pi_ip%%@*}"
+        pi_ip="${pi_ip#*@}"
+    fi
+
+    info "Querying rover status on ${pi_user}@${pi_ip}..."
+    echo ""
+    ssh "${pi_user}@${pi_ip}" bash -s <<- 'REMOTE'
+		echo "=== Rover Service ==="
+		systemctl --no-pager status rover 2>/dev/null || echo "Service not found"
+		echo ""
+		echo "=== System ==="
+		echo "  Uptime: $(uptime -p)"
+		echo "  Memory: $(free -h | awk '/^Mem:/{print $3 "/" $2}')"
+		echo "  Disk:   $(df -h / | awk 'NR==2{print $3 "/" $2 " (" $5 " used)"}')"
+		echo "  Temp:   $(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null | awk '{printf "%.1f°C\n", $1/1000}' || echo 'N/A')"
+		echo ""
+		echo "=== Teensy ==="
+		if ls /dev/ttyACM* 2>/dev/null; then
+		    echo "  Serial device found"
+		else
+		    echo "  No ttyACM device detected"
+		fi
+		echo ""
+		echo "=== Network ==="
+		echo "  IP: $(hostname -I | awk '{print $1}')"
+		echo "  WiFi: $(iwconfig 2>/dev/null | grep -o 'ESSID:\"[^\"]*\"' || echo 'N/A')"
+		echo ""
+		echo "=== BLE ==="
+		btmgmt info 2>/dev/null | head -5 || echo "  BlueZ not available"
+	REMOTE
+}
+
+cmd_sync_sysroot() {
+    local pi_ip="${1:-}"
+    if [ -z "$pi_ip" ]; then
+        die "Usage: ogun sync-sysroot <pi-ip>"
+    fi
+    make -C "$ROOT_DIR" cross-sync PI="$pi_ip"
+}
+
+cmd_clean() {
+    local target="${1:-all}"
+    case "$target" in
+        all)     make -C "$ROOT_DIR" clean-all ;;
+        pi)      make -C "$ROOT_DIR" clean-pi ;;
+        teensy)  make -C "$ROOT_DIR" clean-teensy ;;
+        android) make -C "$ROOT_DIR" clean-android ;;
+        package) make -C "$ROOT_DIR" clean-package ;;
+        *)       die "Unknown clean target: $target" ;;
+    esac
+    ok "Clean complete."
+}
+
+cmd_deps() {
+    info "Installing build dependencies..."
+    if [ "$(id -u)" -ne 0 ]; then
+        die "Run as root: sudo ./ogun deps"
+    fi
+    "$SCRIPTS_DIR/install.sh"
+}
+
+# ---------- Update (self-update from GitHub Releases) --------
+
+cmd_update() {
+    local flash_teensy=false
+    local target_version="latest"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --flash-teensy)  flash_teensy=true; shift ;;
+            --version)       target_version="$2"; shift 2 ;;
+            *)               die "Unknown flag: $1" ;;
+        esac
+    done
+
+    if [ "$(id -u)" -ne 0 ]; then
+        die "Run as root: sudo ./ogun update [--flash-teensy]"
+    fi
+
+    # Check current installed version
+    if [ -f /opt/rover/INSTALLED_VERSION ]; then
+        info "Current version: $(cat /opt/rover/INSTALLED_VERSION)"
+    else
+        info "No version info found (first install?)"
+    fi
+
+    # Need curl or wget
+    local fetch_cmd=""
+    if command -v curl &>/dev/null; then
+        fetch_cmd="curl"
+    elif command -v wget &>/dev/null; then
+        fetch_cmd="wget"
+    else
+        die "Need curl or wget. Install: sudo apt install curl"
+    fi
+
+    # Query GitHub API for the release
+    local api_url=""
+    if [ "$target_version" = "latest" ]; then
+        api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+    else
+        api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${target_version}"
+    fi
+
+    info "Fetching release info from ${GITHUB_REPO}..."
+    local release_json=""
+    if [ "$fetch_cmd" = "curl" ]; then
+        release_json=$(curl -sL "$api_url")
+    else
+        release_json=$(wget -qO- "$api_url")
+    fi
+
+    # Parse the tarball URL (look for aarch64.tar.gz asset)
+    local tarball_url
+    tarball_url=$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*aarch64\.tar\.gz"' | head -1 | grep -o 'https://[^"]*')
+
+    if [ -z "$tarball_url" ]; then
+        # Fallback: any .tar.gz asset
+        tarball_url=$(echo "$release_json" | grep -o '"browser_download_url":\s*"[^"]*\.tar\.gz"' | head -1 | grep -o 'https://[^"]*')
+    fi
+
+    if [ -z "$tarball_url" ]; then
+        local tag_name
+        tag_name=$(echo "$release_json" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+        if [ -n "$tag_name" ]; then
+            die "Release $tag_name found but no .tar.gz asset attached."
+        else
+            die "No release found. Check https://github.com/${GITHUB_REPO}/releases"
+        fi
+    fi
+
+    local release_tag
+    release_tag=$(echo "$release_json" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+    info "Found release: $release_tag"
+    info "Downloading: $tarball_url"
+
+    # Download to temp
+    local tmp_dir
+    tmp_dir=$(mktemp -d /tmp/ogun-update.XXXXXX)
+    local tmp_tar="$tmp_dir/ogun-update.tar.gz"
+
+    if [ "$fetch_cmd" = "curl" ]; then
+        curl -L --progress-bar -o "$tmp_tar" "$tarball_url"
+    else
+        wget --show-progress -O "$tmp_tar" "$tarball_url"
+    fi
+
+    # Extract and apply
+    info "Extracting..."
+    tar xzf "$tmp_tar" -C "$tmp_dir"
+
+    # Find the extracted directory (could be ogun-X.Y.Z/ or update-package/)
+    local pkg_dir
+    pkg_dir=$(find "$tmp_dir" -maxdepth 1 -type d -name 'ogun-*' -o -name 'update-package' | head -1)
+    if [ -z "$pkg_dir" ] || [ ! -f "$pkg_dir/apply-update.sh" ]; then
+        # Maybe files are directly in a single subdirectory
+        pkg_dir=$(find "$tmp_dir" -maxdepth 2 -name 'apply-update.sh' -exec dirname {} \; | head -1)
+    fi
+
+    if [ -z "$pkg_dir" ] || [ ! -f "$pkg_dir/apply-update.sh" ]; then
+        rm -rf "$tmp_dir"
+        die "Invalid package — apply-update.sh not found"
+    fi
+
+    info "Applying update..."
+    chmod +x "$pkg_dir/apply-update.sh"
+    if $flash_teensy; then
+        "$pkg_dir/apply-update.sh" --flash-teensy
+    else
+        "$pkg_dir/apply-update.sh"
+    fi
+
+    # Cleanup
+    rm -rf "$tmp_dir"
+    ok "Update complete ($release_tag)"
+}
+
+# ---------- Release (create a git tag + push) ----------------
+
+cmd_release() {
+    local bump="${1:-}"
+
+    source "$ROOT_DIR/VERSION"
+
+    case "$bump" in
+        major)
+            VERSION_MAJOR=$((VERSION_MAJOR + 1))
+            VERSION_MINOR=0
+            VERSION_PATCH=0
+            ;;
+        minor)
+            VERSION_MINOR=$((VERSION_MINOR + 1))
+            VERSION_PATCH=0
+            ;;
+        patch)
+            VERSION_PATCH=$((VERSION_PATCH + 1))
+            ;;
+        "")
+            die "Usage: ./ogun release <major|minor|patch>"
+            ;;
+        *)
+            die "Unknown bump type: $bump (use major, minor, or patch)"
+            ;;
+    esac
+
+    local new_version="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
+    local tag="v${new_version}"
+
+    info "Bumping version to $new_version"
+
+    # Update VERSION file (clear dev tag for releases)
+    cat > "$ROOT_DIR/VERSION" << VERFILE
+# ============================================================
+#  Ogun Rover — Version File
+#
+#  Single source of truth for version across all components.
+#  Read by the build system, embedded into binaries.
+#
+#  Bump this before a release, then run:
+#    ./ogun build all && ./ogun deploy <pi-ip>
+# ============================================================
+
+VERSION_MAJOR=${VERSION_MAJOR}
+VERSION_MINOR=${VERSION_MINOR}
+VERSION_PATCH=${VERSION_PATCH}
+VERSION_TAG=
+
+# Full version string: ${new_version}
+VERFILE
+
+    need_cmd git "Git is required for releases"
+
+    git -C "$ROOT_DIR" add VERSION
+    git -C "$ROOT_DIR" commit -m "release: ${tag}"
+    git -C "$ROOT_DIR" tag -a "$tag" -m "Ogun ${new_version}"
+
+    ok "Created tag: $tag"
+    echo ""
+    echo "  Push to trigger CI build + GitHub Release:"
+    echo "    git push origin main $tag"
+}
+
+cmd_info() {
+    make -C "$ROOT_DIR" info --no-print-directory
+}
+
+cmd_help() {
+    echo -e "${BOLD}Ogun Rover — Build & Deploy CLI${NC}"
+    echo ""
+    echo "Usage: ./ogun <command> [args...]"
+    echo ""
+    echo -e "${BOLD}Build:${NC}"
+    echo "  build [all|pi|teensy|android|cross]  Build component(s)  (default: all)"
+    echo "  flash [teensy]                        Flash firmware via USB"
+    echo ""
+    echo -e "${BOLD}Deploy:${NC}"
+    echo "  package                               Create rover-update.tar.gz"
+    echo "  deploy <pi-ip> [--user root]          Build, package, deploy to Pi"
+    echo "  sync-sysroot <pi-ip>                  Pull ARM64 libs for cross-compile"
+    echo ""
+    echo -e "${BOLD}Update (on the Pi):${NC}"
+    echo "  update [--flash-teensy]               Pull latest GitHub Release + apply"
+    echo "  update --version v0.2.0               Pull a specific release"
+    echo ""
+    echo -e "${BOLD}Release (from desktop):${NC}"
+    echo "  release <major|minor|patch>           Bump VERSION, tag, (you push)"
+    echo ""
+    echo -e "${BOLD}Monitor:${NC}"
+    echo "  monitor serial                        Watch Teensy serial output"
+    echo "  monitor rover <pi-ip>                 Tail rover service logs on Pi"
+    echo "  status <pi-ip>                        Show Pi system + rover status"
+    echo ""
+    echo -e "${BOLD}Setup:${NC}"
+    echo "  deps                                  Install Pi build deps (sudo)"
+    echo "  info                                  Show build environment"
+    echo ""
+    echo -e "${BOLD}Clean:${NC}"
+    echo "  clean [all|pi|teensy|android|package] Remove build artifacts"
+    echo ""
+    echo -e "${BOLD}Workflows:${NC}"
+    echo ""
+    echo "  First-time Pi setup (ON the Pi):"
+    echo "    sudo ./ogun deps"
+    echo "    ./ogun build pi"
+    echo "    sudo ./ogun build pi && sudo make install"
+    echo ""
+    echo "  Dev cycle (ON the Pi):"
+    echo "    ./ogun build pi && sudo systemctl restart rover"
+    echo ""
+    echo "  Dev cycle (from desktop, cross-compile):"
+    echo "    ./ogun sync-sysroot <pi-ip>     # one-time"
+    echo "    ./ogun build cross"
+    echo "    ./ogun deploy <pi-ip>"
+    echo ""
+    echo "  Teensy firmware:"
+    echo "    ./ogun build teensy"
+    echo "    ./ogun flash teensy"
+    echo ""
+    echo "  Full build + deploy:"
+    echo "    ./ogun build all"
+    echo "    ./ogun deploy <pi-ip>"
+    echo ""
+    echo "  OTA update (on the Pi):"
+    echo "    sudo ./ogun update --flash-teensy"
+    echo ""
+    echo "  Cut a release (from desktop):"
+    echo "    ./ogun release patch"
+    echo "    git push origin main v0.1.1  # triggers GitHub Actions"
+}
+
+# Copy the standalone apply-update.sh into the package (called by Makefile)
+cmd_package_script() {
+    cat "$ROOT_DIR/scripts/apply-update.sh"
+}
+
+# ---------- Main dispatch ------------------------------------
+CMD="${1:-help}"
+shift || true
+
+case "$CMD" in
+    build)          cmd_build "$@" ;;
+    flash)          cmd_flash "$@" ;;
+    deploy)         cmd_deploy "$@" ;;
+    package)        cmd_package "$@" ;;
+    package-script) cmd_package_script ;;
+    update)         cmd_update "$@" ;;
+    release)        cmd_release "$@" ;;
+    monitor)        cmd_monitor "$@" ;;
+    status)         cmd_status "$@" ;;
+    sync-sysroot)   cmd_sync_sysroot "$@" ;;
+    clean)          cmd_clean "$@" ;;
+    deps)           cmd_deps "$@" ;;
+    info)           cmd_info "$@" ;;
+    help|--help|-h) cmd_help ;;
+    *)              die "Unknown command: $CMD (run './ogun help')" ;;
+esac

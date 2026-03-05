@@ -1,0 +1,33 @@
+# ============================================================
+#  Ogun Rover — .gitignore
+# ============================================================
+
+# --- Build artifacts ---
+pi_server/build/
+pi_server/build-cross/
+pi_server/sysroot-arm64/
+teensy_firmware/.pio/
+update-package/
+rover-update.tar.gz
+
+# --- Generated files ---
+pi_server/src/Version.hpp
+teensy_firmware/src/Version.hpp
+
+# --- Android ---
+android_app/.gradle/
+android_app/build/
+android_app/app/build/
+android_app/local.properties
+android_app/.idea/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db

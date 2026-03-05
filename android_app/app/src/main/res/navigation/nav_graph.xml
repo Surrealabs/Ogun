@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/connectionFragment">
+
+    <fragment
+        android:id="@+id/connectionFragment"
+        android:name="com.rover.app.ui.ConnectionFragment"
+        android:label="Connect to Rover">
+        <action
+            android:id="@+id/action_connection_to_controller"
+            app:destination="@id/controllerFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/controllerFragment"
+        android:name="com.rover.app.ui.ControllerFragment"
+        android:label="Rover Control">
+        <action
+            android:id="@+id/action_controller_to_cameras"
+            app:destination="@id/cameraFragment" />
+        <action
+            android:id="@+id/action_controller_to_ota"
+            app:destination="@id/otaFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/cameraFragment"
+        android:name="com.rover.app.ui.CameraFragment"
+        android:label="Cameras" />
+
+    <fragment
+        android:id="@+id/otaFragment"
+        android:name="com.rover.app.ui.OtaFragment"
+        android:label="Firmware Update" />
+
+</navigation>

@@ -1,0 +1,16 @@
+# ============================================================
+#  Ogun Rover — Version File
+#
+#  Single source of truth for version across all components.
+#  Read by the build system, embedded into binaries.
+#
+#  Bump this before a release, then run:
+#    ./ogun build all && ./ogun deploy <pi-ip>
+# ============================================================
+
+VERSION_MAJOR=0
+VERSION_MINOR=1
+VERSION_PATCH=0
+VERSION_TAG=dev
+
+# Full version string: 0.1.0-dev
