@@ -1,9 +1,5 @@
 name: Ogun Rover — Build & Release
 
-# Triggers:
-#   - Every push to main (CI check)
-#   - Git tags like v0.1.0 → create a GitHub Release with the tarball
-
 on:
   push:
     branches: [main]
@@ -15,16 +11,13 @@ env:
   TEENSY_ENV: teensy41
 
 jobs:
-  # ============================================================
-  #  Build rover_server (ARM64 cross-compile) + Teensy firmware
-  # ============================================================
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # full history for git describe
+          fetch-depth: 0
 
       - name: Read version
         id: version
@@ -41,111 +34,55 @@ jobs:
           echo "build=${VERSION_FULL}+${GIT_HASH}" >> "$GITHUB_OUTPUT"
           echo "Building Ogun $VERSION_FULL ($GIT_HASH)"
 
-      # ---------- ARM64 cross-compiler + Pi libraries ----------
-      - name: Install ARM64 cross-compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            cmake ninja-build pkg-config
-
-      # Enable running arm64 Docker containers on x86 runner
-      - name: Set up QEMU for multi-arch Docker
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      # We use a Docker arm64 sysroot to get the Pi's libraries
-      - name: Set up ARM64 sysroot
-        run: |
-          SYSROOT=${{ github.workspace }}/pi_server/sysroot-arm64
-          mkdir -p "$SYSROOT/usr"
-
-          # Pull arm64 packages via debootstrap-like approach
-          # Using a minimal Docker container to extract headers/libs
-          docker run --rm --platform linux/arm64 \
-            -v "$SYSROOT":/sysroot \
-            debian:bookworm bash -c '
-              apt-get update && apt-get install -y --no-install-recommends \
-                libgpiod-dev libjpeg-dev libssl-dev libdbus-1-dev \
-                libudev-dev libsystemd-dev pkg-config
-              # Copy headers and libraries to sysroot
-              cp -a /usr/include /sysroot/usr/include
-              mkdir -p /sysroot/usr/lib/aarch64-linux-gnu
-              cp -a /usr/lib/aarch64-linux-gnu/*.so* /sysroot/usr/lib/aarch64-linux-gnu/ 2>/dev/null || true
-              cp -a /usr/lib/aarch64-linux-gnu/*.a /sysroot/usr/lib/aarch64-linux-gnu/ 2>/dev/null || true
-              cp -a /usr/lib/aarch64-linux-gnu/pkgconfig /sysroot/usr/lib/aarch64-linux-gnu/ 2>/dev/null || true
-            '
-
-      # Build sdbus-c++ for ARM64 in the sysroot
-      - name: Cross-build sdbus-c++ for ARM64
-        run: |
-          SYSROOT=${{ github.workspace }}/pi_server/sysroot-arm64
-          git clone --depth=1 --branch v2.1.0 \
-            https://github.com/Kistler-Group/sdbus-cpp.git /tmp/sdbus-cpp
-
-          cat > /tmp/toolchain-aarch64.cmake << 'EOF'
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR aarch64)
-          set(CMAKE_C_COMPILER   aarch64-linux-gnu-gcc)
-          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-          EOF
-
-          cmake -S /tmp/sdbus-cpp -B /tmp/sdbus-cpp/build \
-            -DCMAKE_TOOLCHAIN_FILE=/tmp/toolchain-aarch64.cmake \
-            -DCMAKE_SYSROOT="$SYSROOT" \
-            -DCMAKE_INSTALL_PREFIX="$SYSROOT/usr/local" \
-            -DCMAKE_BUILD_TYPE=MinSizeRel \
-            -DBUILD_SHARED_LIBS=ON \
-            -DBUILD_TESTS=OFF \
-            -DBUILD_DOC=OFF
-          cmake --build /tmp/sdbus-cpp/build -j$(nproc)
-          cmake --install /tmp/sdbus-cpp/build
-
-      # ---------- Cross-compile rover_server -------------------
-      - name: Generate version header
+      - name: Generate version headers
         run: |
           chmod +x scripts/gen-version.sh
           scripts/gen-version.sh --cpp pi_server/src/Version.hpp
           scripts/gen-version.sh --cpp teensy_firmware/src/Version.hpp
-          cat pi_server/src/Version.hpp
 
-      - name: Cross-compile rover_server for ARM64
+      # ---------- Build rover_server natively in arm64 Docker ----------
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build rover_server (arm64 native in Docker)
         run: |
-          SYSROOT=${{ github.workspace }}/pi_server/sysroot-arm64
-          BUILD_DIR=${{ github.workspace }}/pi_server/build-cross
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}":/workspace \
+            -w /workspace/pi_server \
+            debian:bookworm bash -c '
+              set -e
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential cmake ninja-build pkg-config \
+                libgpiod-dev libjpeg-dev libssl-dev \
+                libdbus-1-dev libudev-dev libsystemd-dev \
+                git ca-certificates
 
-          mkdir -p "$BUILD_DIR"
-          cat > "$BUILD_DIR/toolchain-aarch64.cmake" << EOF
-          set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR aarch64)
-          set(CMAKE_C_COMPILER   aarch64-linux-gnu-gcc)
-          set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
-          set(CMAKE_STRIP        aarch64-linux-gnu-strip)
-          set(CMAKE_SYSROOT "${SYSROOT}")
-          set(CMAKE_FIND_ROOT_PATH "${SYSROOT}")
-          list(APPEND CMAKE_PREFIX_PATH "${SYSROOT}/usr/local")
-          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-          EOF
+              # Build and install sdbus-c++ 2.x (not in bookworm repos)
+              git clone --depth=1 --branch v2.1.0 \
+                https://github.com/Kistler-Group/sdbus-cpp.git /tmp/sdbus-cpp
+              cmake -S /tmp/sdbus-cpp -B /tmp/sdbus-cpp/build \
+                -DCMAKE_BUILD_TYPE=MinSizeRel \
+                -DBUILD_SHARED_LIBS=ON \
+                -DBUILD_TESTS=OFF \
+                -DBUILD_DOC=OFF \
+                -GNinja
+              cmake --build /tmp/sdbus-cpp/build -j$(nproc)
+              cmake --install /tmp/sdbus-cpp/build
+              ldconfig
 
-          cmake -S pi_server -B "$BUILD_DIR" \
-            -DCMAKE_TOOLCHAIN_FILE="$BUILD_DIR/toolchain-aarch64.cmake" \
-            -DCMAKE_BUILD_TYPE=MinSizeRel \
-            -GNinja
+              # Build rover_server
+              cmake -S . -B build \
+                -DCMAKE_BUILD_TYPE=MinSizeRel \
+                -GNinja
+              cmake --build build -j$(nproc)
+              strip build/rover_server
 
-          cmake --build "$BUILD_DIR" -j$(nproc)
-          aarch64-linux-gnu-strip "$BUILD_DIR/rover_server"
-
-          echo "rover_server: $(du -h "$BUILD_DIR/rover_server" | cut -f1)"
-          file "$BUILD_DIR/rover_server"
+              echo "rover_server: $(du -h build/rover_server | cut -f1)"
+              file build/rover_server
+            '
 
       # ---------- Build Teensy firmware (.hex) -----------------
       - name: Install PlatformIO
@@ -170,7 +107,7 @@ jobs:
           mkdir -p "$PKG_DIR"
 
           # Binaries
-          cp pi_server/build-cross/rover_server "$PKG_DIR/"
+          cp pi_server/build/rover_server "$PKG_DIR/"
           cp teensy_firmware/.pio/build/${{ env.TEENSY_ENV }}/firmware.hex "$PKG_DIR/teensy_firmware.hex"
 
           # Config / service files
@@ -182,9 +119,8 @@ jobs:
             cp -r pi_server/webui "$PKG_DIR/webui"
           fi
 
-          # Self-update helper (applied on the Pi)
-          cp scripts/apply-update.sh "$PKG_DIR/" 2>/dev/null || \
-            ${{ github.workspace }}/ogun package-script > "$PKG_DIR/apply-update.sh"
+          # Self-update script
+          cp scripts/apply-update.sh "$PKG_DIR/"
           chmod +x "$PKG_DIR/apply-update.sh"
 
           # Version metadata
@@ -220,7 +156,7 @@ jobs:
             **Included:**
             - `rover_server` — ARM64 binary for BTT Pi 1.2
             - `teensy_firmware.hex` — Teensy 4.1 firmware
-            - Config templates + systemd service
+            - WebUI assets, config templates, systemd service
 
             **Install on the Pi:**
             ```bash
