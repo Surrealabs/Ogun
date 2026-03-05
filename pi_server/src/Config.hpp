@@ -49,6 +49,10 @@ struct RoverConfig {
     std::string ota_flash_cmd  = "teensy_loader_cli";
     std::string teensy_mmcu    = "TEENSY41";   // or TEENSY40, TEENSY36 ...
 
+    // --- Web UI ---
+    uint16_t    webui_port     = 8080;
+    std::string webui_dir      = "/opt/rover/webui";
+
     // --- Drive mixing ---
     float max_motor_speed      = 1.0f;   // cap on |l| and |r|
     float deadband             = 0.05f;  // joystick dead zone

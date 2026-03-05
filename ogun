@@ -26,7 +26,7 @@ ANDROID_DIR="$ROOT_DIR/android_app"
 
 # GitHub repo for releases (owner/repo format)
 # Set this to your actual repo:
-GITHUB_REPO="${OGUN_GITHUB_REPO:-surreallabs/ogun}"
+GITHUB_REPO="${OGUN_GITHUB_REPO:-Surrealabs/Ogun}"
 
 # Colors (disabled if not a terminal)
 if [ -t 1 ]; then

@@ -3,6 +3,7 @@
 #include "serial/TeensyBridge.hpp"
 #include "ble/BleServer.hpp"
 #include "wifi/WifiServer.hpp"
+#include "webui/WebUiServer.hpp"
 #include "camera/CameraStream.hpp"
 #include "gpio/GpioController.hpp"
 #include "ota/TeensyOta.hpp"
@@ -70,12 +71,17 @@ static std::string otaProgress(int pct, const std::string& msg) {
 }
 
 // ---- Main command dispatcher (called from BLE and WiFi) ----
+// Forward declare — WebUiServer* is optional (may be null)
+class WebUiServer;
+static void broadcastAll(BleServer& ble, WifiServer& ws, WebUiServer* webui, const std::string& json);
+
 static void dispatchCommand(const std::string& json,
                             TeensyBridge& teensy,
                             GpioController& gpio,
                             TeensyOta& ota,
                             BleServer& ble,
                             WifiServer& ws,
+                            WebUiServer* webui,
                             const RoverConfig& cfg)
 {
     std::string type = jsonStr(json, "type");
@@ -156,10 +162,9 @@ static void dispatchCommand(const std::string& json,
             if (ota.rxChunks() == ota.totalChunks()) {
                 // Stop Teensy before flashing
                 teensy.sendStop();
-                ota.flash([&ble, &ws](int pct, const std::string& msg) {
+                ota.flash([&ble, &ws, webui](int pct, const std::string& msg) {
                     std::string j = otaProgress(pct, msg);
-                    ble.notifyStatus(j);
-                    ws.broadcast(j);
+                    broadcastAll(ble, ws, webui, j);
                 });
             }
         }
@@ -215,19 +220,24 @@ int main(int argc, char* argv[]) {
     // ---- WiFi WebSocket -----------
     WifiServer  ws(cfg.ws_port);
 
+    // ---- Web UI server (HTTP + WebSocket on :8080) --------
+    WebUiServer webui(cfg.webui_port, cfg.webui_dir);
+    WebUiServer* webuiPtr = &webui;
+
     // ---- Wire up sensor data → telemetry broadcast --------
     teensy.onSensors([&](const TeensySensors& s) {
         std::string json = buildTelemetry(s, gpio);
-        ble.notifyStatus(json);
-        ws.broadcast(json);
+        broadcastAll(ble, ws, webuiPtr, json);
+        webui.setLatestStatus(json);
     });
 
-    // ---- Command handler shared by BLE and WiFi -----------
+    // ---- Command handler shared by BLE, WiFi, and WebUI ---
     auto cmdHandler = [&](const std::string& json) {
-        dispatchCommand(json, teensy, gpio, ota, ble, ws, cfg);
+        dispatchCommand(json, teensy, gpio, ota, ble, ws, webuiPtr, cfg);
     };
     ble.onCommand(cmdHandler);
     ws.onMessage(cmdHandler);
+    webui.onMessage(cmdHandler);
 
     // ---- OTA chunk received via BLE raw bytes --------------
     ble.onOtaChunk([&](const std::vector<uint8_t>& data) {
@@ -247,8 +257,7 @@ int main(int argc, char* argv[]) {
             teensy.sendStop();
             ota.flash([&](int pct, const std::string& msg){
                 std::string j = otaProgress(pct, msg);
-                ble.notifyStatus(j);
-                ws.broadcast(j);
+                broadcastAll(ble, ws, webuiPtr, j);
             });
         }
     });
@@ -256,11 +265,13 @@ int main(int argc, char* argv[]) {
     // ---- Start servers ------------
     ble.start();
     ws.start();
+    webui.start();
 
     // ---- Telemetry request loop ---------------------------
     int telPeriodMs = (cfg.telemetry_hz > 0) ? (1000 / cfg.telemetry_hz) : 100;
     std::cout << "[main] All systems running. Press Ctrl+C to stop.\n";
-    std::cout << "[main] Cameras: http://<ip>:" << cfg.cam0_port
+    std::cout << "[main] Web UI:    http://<ip>:" << cfg.webui_port << "\n";
+    std::cout << "[main] Cameras:   http://<ip>:" << cfg.cam0_port
               << "  http://<ip>:" << cfg.cam1_port << "\n";
     std::cout << "[main] WebSocket: ws://<ip>:" << cfg.ws_port << "\n";
 
@@ -273,9 +284,17 @@ int main(int argc, char* argv[]) {
     teensy.sendStop();
     ble.stop();
     ws.stop();
+    webui.stop();
     cam0.stop();
     cam1.stop();
     gpio.shutdown();
     teensy.close();
     return 0;
+}
+
+// Broadcast to all transports (BLE + WiFi WS + WebUI WS)
+static void broadcastAll(BleServer& ble, WifiServer& ws, WebUiServer* webui, const std::string& json) {
+    ble.notifyStatus(json);
+    ws.broadcast(json);
+    if (webui) webui->broadcast(json);
 }

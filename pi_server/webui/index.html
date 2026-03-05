@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Rover Control</title>
+<title>Ogun — Rover Control</title>
 <style>
 /* ============================================================
    Rover Web UI — Dark theme, responsive landscape layout
@@ -140,7 +140,7 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
 
 <!-- ---- Top bar ---- -->
 <div id="topbar">
-  <span class="title">Rover</span>
+  <span class="title">Ogun</span>
   <span class="status-dot" id="statusDot"></span>
   <span class="status-text" id="statusText">Disconnected</span>
   <span class="spacer"></span>
@@ -216,10 +216,10 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
 <!-- ---- Connect dialog ---- -->
 <div id="connect-dialog">
   <div id="connect-box">
-    <h2>&#128752; Connect to Rover</h2>
+    <h2>&#128752; Connect to Ogun</h2>
     <input id="ipInput" type="text" placeholder="Rover IP (e.g. 192.168.1.50)" autofocus>
     <button class="btn accent" style="width:100%;padding:10px" onclick="doConnect()">Connect</button>
-    <div class="hint">Enter the IP of the BTT Pi. WebSocket :9000, Cameras :8081/:8082</div>
+    <div class="hint">Enter the IP of the BTT Pi. WebUI :8080, Cameras :8081/:8082</div>
     <div class="hint" style="margin-top:4px" id="connectErr"></div>
   </div>
 </div>
@@ -251,6 +251,7 @@ let roverIp = '';
 let connected = false;
 let lastTelem = {};
 let lastSendTime = 0;
+let servedFromRover = false; // true when page is served by the Pi's WebUI server
 
 // ---- DOM refs ----
 const $ = id => document.getElementById(id);
@@ -279,10 +280,12 @@ function toggleLog() { $('log-panel').classList.toggle('open'); }
   const host = location.hostname;
   if (host && host !== 'localhost' && host !== '127.0.0.1' && host !== '') {
     ipInput.value = host;
-  }
-  // Also try auto-connect if served from rover
-  if (host && host !== 'localhost' && host !== '127.0.0.1' && host !== '' && location.port === '8080') {
-    setTimeout(() => doConnect(), 300);
+    // If served from the rover's own WebUI port, auto-connect immediately
+    // using the same-origin /ws WebSocket endpoint
+    if (location.port === '8080' || location.port === '') {
+      servedFromRover = true;
+      setTimeout(() => doConnect(), 300);
+    }
   }
 })();
 
@@ -295,7 +298,16 @@ function doConnect() {
 
   if (ws) { ws.close(); ws = null; }
   try {
-    ws = new WebSocket(`ws://${roverIp}:9000`);
+    // If served from the rover's WebUI server, connect to same-origin /ws
+    // Otherwise fall back to the standalone WifiServer on :9000
+    let wsUrl;
+    if (servedFromRover) {
+      wsUrl = `ws://${location.host}/ws`;
+    } else {
+      wsUrl = `ws://${roverIp}:9000`;
+    }
+    addLog('WS → ' + wsUrl);
+    ws = new WebSocket(wsUrl);
   } catch (e) {
     connectErr.textContent = 'WebSocket failed: ' + e.message;
     return;

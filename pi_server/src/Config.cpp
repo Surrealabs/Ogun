@@ -37,6 +37,8 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "max_motor_speed") cfg.max_motor_speed = std::stof(val);
         else if (key == "ota_flash_cmd") cfg.ota_flash_cmd = val;
         else if (key == "teensy_mmcu") cfg.teensy_mmcu = val;
+        else if (key == "webui_port") cfg.webui_port = std::stoul(val);
+        else if (key == "webui_dir")  cfg.webui_dir = val;
         else {
             std::cerr << "[config] unknown key: " << key << "\n";
         }

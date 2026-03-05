@@ -17,6 +17,10 @@ ble_device     = hci0
 # --- WiFi control ---
 ws_port        = 9000
 
+# --- Web UI (browser control panel, also used by veve app) ---
+webui_port     = 8080
+webui_dir      = /opt/rover/webui
+
 # --- Cameras (V4L2) ---
 # ls /dev/video* to discover devices
 cam0_device    = /dev/video0

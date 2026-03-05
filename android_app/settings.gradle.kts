@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "RoverControl"
 include(":app")
+include(":ogun-webview")

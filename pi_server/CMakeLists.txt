@@ -30,6 +30,7 @@ set(SOURCES
     src/serial/TeensyBridge.cpp
     src/ble/BleServer.cpp
     src/wifi/WifiServer.cpp
+    src/webui/WebUiServer.cpp
     src/camera/CameraStream.cpp
     src/gpio/GpioController.cpp
     src/ota/TeensyOta.cpp
