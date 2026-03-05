@@ -50,11 +50,17 @@ jobs:
             g++-aarch64-linux-gnu \
             cmake ninja-build pkg-config
 
+      # Enable running arm64 Docker containers on x86 runner
+      - name: Set up QEMU for multi-arch Docker
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       # We use a Docker arm64 sysroot to get the Pi's libraries
       - name: Set up ARM64 sysroot
         run: |
           SYSROOT=${{ github.workspace }}/pi_server/sysroot-arm64
-          mkdir -p "$SYSROOT"
+          mkdir -p "$SYSROOT/usr"
 
           # Pull arm64 packages via debootstrap-like approach
           # Using a minimal Docker container to extract headers/libs
