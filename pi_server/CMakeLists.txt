@@ -9,7 +9,8 @@ set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 find_package(PkgConfig REQUIRED)
 
 # BlueZ / D-Bus via sdbus-c++
-find_package(SDBusCpp 2.0 REQUIRED)
+# sdbus-c++ 2.x installs as "sdbus-c++" cmake package
+find_package(sdbus-c++ 2.0 REQUIRED)
 
 # libgpiod
 pkg_check_modules(GPIOD REQUIRED libgpiod)

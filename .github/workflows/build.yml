@@ -76,6 +76,7 @@ jobs:
               # Build rover_server
               cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=MinSizeRel \
+                -DCMAKE_PREFIX_PATH=/usr/local \
                 -GNinja
               cmake --build build -j$(nproc)
               strip build/rover_server
