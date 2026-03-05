@@ -244,6 +244,6 @@ void BleServer::notifyStatus(const std::string& json) {
     if (!notifyEnabled_ || !statusCharObj_) return;
     try {
         statusCharObj_->emitPropertiesChangedSignal(
-            GATT_CHAR, {"Value"});
+            GATT_CHAR, {PropertyName{"Value"}});
     } catch (...) {}
 }
