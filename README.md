@@ -176,6 +176,8 @@ Open `android_app/` in **Android Studio**, or:
 | `./ogun deploy <ip>` | Package + deploy to Pi via SSH |
 | `./ogun update` | Pull latest GitHub Release + apply (on Pi) |
 | `./ogun update --flash-teensy` | Update + flash Teensy firmware |
+| `./ogun autoupdate enable` | Enable scheduled background updates on Pi |
+| `./ogun autoupdate status` | Show auto-update timer/service status |
 | `./ogun release patch` | Bump version, git tag (you push) |
 | `./ogun monitor serial` | Watch Teensy serial output |
 | `./ogun monitor rover <ip>` | Tail rover service logs |
@@ -214,6 +216,22 @@ sudo ./ogun update --flash-teensy  # also flashes the Teensy
 Or for a specific version:
 ```bash
 sudo ./ogun update --version v0.1.0 --flash-teensy
+```
+
+### Optional: Scheduled Auto-Updates on the Pi
+
+After updating to a release that includes auto-update files, enable the timer:
+
+```bash
+sudo ./ogun autoupdate enable
+```
+
+Default schedule is every 6 hours (`rover-auto-update.timer`) and updates rover software without flashing Teensy.
+
+```bash
+sudo ./ogun autoupdate status
+sudo ./ogun autoupdate run-now
+sudo ./ogun autoupdate disable
 ```
 
 The update flow:

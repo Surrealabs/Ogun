@@ -111,6 +111,11 @@ jobs:
           # Self-update script
           cp scripts/apply-update.sh "$PKG_DIR/"
           chmod +x "$PKG_DIR/apply-update.sh"
+          cp scripts/rover-auto-update.sh "$PKG_DIR/"
+          chmod +x "$PKG_DIR/rover-auto-update.sh"
+          cp scripts/rover-auto-update.service "$PKG_DIR/"
+          cp scripts/rover-auto-update.timer "$PKG_DIR/"
+          cp scripts/rover-auto-update.env.example "$PKG_DIR/"
 
           # Version metadata
           echo "${{ steps.version.outputs.build }}" > "$PKG_DIR/BUILD"

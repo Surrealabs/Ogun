@@ -14,10 +14,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 FLASH_TEENSY=false
+ENABLE_AUTO_UPDATE=false
+DISABLE_AUTO_UPDATE=false
 for arg in "$@"; do
     case "$arg" in
         --flash-teensy) FLASH_TEENSY=true ;;
-        --help|-h) echo "Usage: sudo $0 [--flash-teensy]"; exit 0 ;;
+        --enable-auto-update) ENABLE_AUTO_UPDATE=true ;;
+        --disable-auto-update) DISABLE_AUTO_UPDATE=true ;;
+        --help|-h)
+            echo "Usage: sudo $0 [--flash-teensy] [--enable-auto-update|--disable-auto-update]"
+            exit 0
+            ;;
     esac
 done
 
@@ -59,8 +66,33 @@ fi
 # Update systemd service
 if [ -f "$SCRIPT_DIR/rover.service" ]; then
     cp "$SCRIPT_DIR/rover.service" /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable rover.service
+fi
+
+# Optional auto-update script + timer files
+if [ -f "$SCRIPT_DIR/rover-auto-update.sh" ]; then
+    install -m 755 "$SCRIPT_DIR/rover-auto-update.sh" /usr/local/bin/rover-auto-update.sh
+fi
+if [ -f "$SCRIPT_DIR/rover-auto-update.service" ]; then
+    cp "$SCRIPT_DIR/rover-auto-update.service" /etc/systemd/system/
+fi
+if [ -f "$SCRIPT_DIR/rover-auto-update.timer" ]; then
+    cp "$SCRIPT_DIR/rover-auto-update.timer" /etc/systemd/system/
+fi
+if [ -f "$SCRIPT_DIR/rover-auto-update.env.example" ] && [ ! -f /etc/default/rover-auto-update ]; then
+    mkdir -p /etc/default
+    cp "$SCRIPT_DIR/rover-auto-update.env.example" /etc/default/rover-auto-update
+fi
+
+systemctl daemon-reload
+systemctl enable rover.service
+
+if $ENABLE_AUTO_UPDATE; then
+    systemctl enable --now rover-auto-update.timer
+    echo "[update] Enabled rover-auto-update.timer"
+fi
+if $DISABLE_AUTO_UPDATE; then
+    systemctl disable --now rover-auto-update.timer 2>/dev/null || true
+    echo "[update] Disabled rover-auto-update.timer"
 fi
 
 # Flash Teensy firmware

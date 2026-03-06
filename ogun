@@ -346,6 +346,40 @@ cmd_update() {
     ok "Update complete ($release_tag)"
 }
 
+cmd_autoupdate() {
+    local action="${1:-status}"
+
+    if [ "$(id -u)" -ne 0 ]; then
+        die "Run as root: sudo ./ogun autoupdate <enable|disable|status|run-now>"
+    fi
+
+    case "$action" in
+        enable)
+            systemctl daemon-reload
+            systemctl enable --now rover-auto-update.timer
+            ok "Enabled rover-auto-update.timer"
+            systemctl --no-pager status rover-auto-update.timer || true
+            ;;
+        disable)
+            systemctl disable --now rover-auto-update.timer
+            ok "Disabled rover-auto-update.timer"
+            ;;
+        status)
+            systemctl --no-pager status rover-auto-update.timer || true
+            echo ""
+            systemctl --no-pager status rover-auto-update.service || true
+            ;;
+        run-now)
+            systemctl start rover-auto-update.service
+            ok "Triggered rover-auto-update.service"
+            journalctl -u rover-auto-update.service -n 60 --no-pager || true
+            ;;
+        *)
+            die "Usage: ogun autoupdate [enable|disable|status|run-now]"
+            ;;
+    esac
+}
+
 # ---------- Release (create a git tag + push) ----------------
 
 cmd_release() {
@@ -432,6 +466,7 @@ cmd_help() {
     echo -e "${BOLD}Update (on the Pi):${NC}"
     echo "  update [--flash-teensy]               Pull latest GitHub Release + apply"
     echo "  update --version v0.2.0               Pull a specific release"
+    echo "  autoupdate [enable|disable|status|run-now]  Manage scheduled updates"
     echo ""
     echo -e "${BOLD}Release (from desktop):${NC}"
     echo "  release <major|minor|patch>           Bump VERSION, tag, (you push)"
@@ -495,6 +530,7 @@ case "$CMD" in
     package)        cmd_package "$@" ;;
     package-script) cmd_package_script ;;
     update)         cmd_update "$@" ;;
+    autoupdate)     cmd_autoupdate "$@" ;;
     release)        cmd_release "$@" ;;
     monitor)        cmd_monitor "$@" ;;
     status)         cmd_status "$@" ;;

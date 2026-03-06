@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Ogun Rover Auto Updater periodically
+Documentation=https://github.com/Surrealabs/Ogun
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+AccuracySec=2min
+Persistent=true
+Unit=rover-auto-update.service
+
+[Install]
+WantedBy=timers.target
