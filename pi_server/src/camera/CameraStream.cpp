@@ -31,17 +31,29 @@ bool CameraStream::openV4L2() {
         std::cerr << "[cam:" << device_ << "] open failed: " << strerror(errno) << "\n";
         return false;
     }
-    // Set format — try YUYV first (universal), fall back to MJPEG from device
+    // Prefer native MJPEG (much lower CPU on ARM), fall back to YUYV.
     v4l2_format fmt{};
     fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     fmt.fmt.pix.width       = width_;
     fmt.fmt.pix.height      = height_;
-    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
     fmt.fmt.pix.field       = V4L2_FIELD_INTERLACED;
     if (ioctl(v4l2Fd_, VIDIOC_S_FMT, &fmt) < 0) {
-        std::cerr << "[cam:" << device_ << "] S_FMT failed\n";
-        return false;
+        // Fall back to raw YUYV if MJPEG is unsupported.
+        fmt = {};
+        fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        fmt.fmt.pix.width       = width_;
+        fmt.fmt.pix.height      = height_;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+        fmt.fmt.pix.field       = V4L2_FIELD_INTERLACED;
+        if (ioctl(v4l2Fd_, VIDIOC_S_FMT, &fmt) < 0) {
+            std::cerr << "[cam:" << device_ << "] S_FMT failed\n";
+            return false;
+        }
     }
+    sourceIsMjpeg_ = (fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_MJPEG);
+    std::cout << "[cam:" << device_ << "] capture format: "
+              << (sourceIsMjpeg_ ? "MJPEG" : "YUYV") << "\n";
     // Frame rate
     v4l2_streamparm parm{};
     parm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -134,8 +146,15 @@ std::vector<uint8_t> CameraStream::captureJpeg() {
     buf.memory = V4L2_MEMORY_MMAP;
     if (ioctl(v4l2Fd_, VIDIOC_DQBUF, &buf) < 0) return {};
 
-    auto jpeg = yuyv2jpeg(static_cast<uint8_t*>(mapBuf_[buf.index]),
-                          width_, height_, jpegQuality_);
+    std::vector<uint8_t> jpeg;
+    if (sourceIsMjpeg_) {
+        // Camera already encoded JPEG, so just forward bytes directly.
+        uint8_t* src = static_cast<uint8_t*>(mapBuf_[buf.index]);
+        jpeg.assign(src, src + buf.bytesused);
+    } else {
+        jpeg = yuyv2jpeg(static_cast<uint8_t*>(mapBuf_[buf.index]),
+                         width_, height_, jpegQuality_);
+    }
 
     ioctl(v4l2Fd_, VIDIOC_QBUF, &buf);
     return jpeg;

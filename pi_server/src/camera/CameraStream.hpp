@@ -41,6 +41,7 @@ private:
     int          width_, height_, fps_, jpegQuality_;
 
     int          v4l2Fd_{-1};
+    bool         sourceIsMjpeg_{false};
     void*        mapBuf_[4]{};   // mmap buffers
     size_t       mapLen_[4]{};
     int          bufCount_{0};
