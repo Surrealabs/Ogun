@@ -11,6 +11,31 @@ struct RoverConfig {
     // --- Teensy serial bridge ---
     std::string teensy_port    = "/dev/ttyACM0";  // USB serial to Teensy
     uint32_t    serial_baud    = 115200;
+    bool        teensy_push_fw_config = true;
+
+    // --- Teensy firmware runtime config (sent over serial on boot) ---
+    int teensy_l_rpwm_pin = 2;
+    int teensy_l_lpwm_pin = 3;
+    int teensy_l_en_pin   = 4;
+    int teensy_r_rpwm_pin = 5;
+    int teensy_r_lpwm_pin = 6;
+    int teensy_r_en_pin   = 7;
+
+    int teensy_enc_la_pin = 8;
+    int teensy_enc_lb_pin = 9;
+    int teensy_enc_ra_pin = 10;
+    int teensy_enc_rb_pin = 11;
+
+    int teensy_vbat_adc_pin = 14; // A0 on Teensy
+    int teensy_curr_adc_pin = 15; // A1 on Teensy
+    int teensy_temp_adc_pin = 16; // A2 on Teensy
+
+    float teensy_vbat_div_ratio = 4.03f;
+    float teensy_curr_zero_mv = 1650.0f;
+    float teensy_curr_sens_mv_per_a = 66.0f;
+
+    int teensy_watchdog_ms = 500;
+    int teensy_telem_interval_ms = 100;
 
     // --- BLE ---
     std::string ble_device     = "hci0";

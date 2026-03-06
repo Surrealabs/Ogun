@@ -25,6 +25,25 @@ RoverConfig loadConfig(const std::string& path) {
 
         if (key == "teensy_port")      cfg.teensy_port = val;
         else if (key == "serial_baud") cfg.serial_baud = std::stoul(val);
+        else if (key == "teensy_push_fw_config") cfg.teensy_push_fw_config = (val == "1" || val == "true" || val == "yes");
+        else if (key == "teensy_l_rpwm_pin") cfg.teensy_l_rpwm_pin = std::stoi(val);
+        else if (key == "teensy_l_lpwm_pin") cfg.teensy_l_lpwm_pin = std::stoi(val);
+        else if (key == "teensy_l_en_pin") cfg.teensy_l_en_pin = std::stoi(val);
+        else if (key == "teensy_r_rpwm_pin") cfg.teensy_r_rpwm_pin = std::stoi(val);
+        else if (key == "teensy_r_lpwm_pin") cfg.teensy_r_lpwm_pin = std::stoi(val);
+        else if (key == "teensy_r_en_pin") cfg.teensy_r_en_pin = std::stoi(val);
+        else if (key == "teensy_enc_la_pin") cfg.teensy_enc_la_pin = std::stoi(val);
+        else if (key == "teensy_enc_lb_pin") cfg.teensy_enc_lb_pin = std::stoi(val);
+        else if (key == "teensy_enc_ra_pin") cfg.teensy_enc_ra_pin = std::stoi(val);
+        else if (key == "teensy_enc_rb_pin") cfg.teensy_enc_rb_pin = std::stoi(val);
+        else if (key == "teensy_vbat_adc_pin") cfg.teensy_vbat_adc_pin = std::stoi(val);
+        else if (key == "teensy_curr_adc_pin") cfg.teensy_curr_adc_pin = std::stoi(val);
+        else if (key == "teensy_temp_adc_pin") cfg.teensy_temp_adc_pin = std::stoi(val);
+        else if (key == "teensy_vbat_div_ratio") cfg.teensy_vbat_div_ratio = std::stof(val);
+        else if (key == "teensy_curr_zero_mv") cfg.teensy_curr_zero_mv = std::stof(val);
+        else if (key == "teensy_curr_sens_mv_per_a") cfg.teensy_curr_sens_mv_per_a = std::stof(val);
+        else if (key == "teensy_watchdog_ms") cfg.teensy_watchdog_ms = std::stoi(val);
+        else if (key == "teensy_telem_interval_ms") cfg.teensy_telem_interval_ms = std::stoi(val);
         else if (key == "ble_name")    cfg.ble_name = val;
         else if (key == "ws_port")     cfg.ws_port = std::stoul(val);
         else if (key == "cam0_device") cfg.cam0_device = val;

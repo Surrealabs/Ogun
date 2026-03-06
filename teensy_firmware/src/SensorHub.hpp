@@ -6,26 +6,21 @@
 #include <Arduino.h>
 #include <Encoder.h>
 
-// ---- Voltage divider / current sense pin config ------------
-// Adjust VBAT_DIV_RATIO to match your voltage divider:
-//   e.g. 10 kΩ + 3.3 kΩ → ratio = (10+3.3)/3.3 ≈ 4.03
-//   Measure raw ADC value with a known voltage and calibrate.
-#define VBAT_ADC_PIN      A0
-#define VBAT_DIV_RATIO    4.03f
-
-// ACS712 / hall-effect current sensor on A1
-// 30A module: 66 mV/A, zero at VCC/2 (~512 on 10-bit ADC)
-#define CURR_ADC_PIN      A1
-#define CURR_SENS_MV_PER_A 66.0f
-
-// NTC thermistor on A2 (optional — leave disconnected if unused)
-#define TEMP_ADC_PIN      A2
+struct SensorConfig {
+    uint8_t vbatAdcPin;
+    uint8_t currAdcPin;
+    uint8_t tempAdcPin;
+    float vbatDivRatio;
+    float currZeroMv;
+    float currSensMvPerA;
+};
 
 class SensorHub {
 public:
     SensorHub(uint8_t encLA, uint8_t encLB,
-              uint8_t encRA, uint8_t encRB)
-        : encL_(encLA, encLB), encR_(encRA, encRB) {}
+          uint8_t encRA, uint8_t encRB,
+          const SensorConfig& cfg)
+      : encL_(encLA, encLB), encR_(encRA, encRB), cfg_(cfg) {}
 
     void begin() {
         analogReadResolution(12);   // Teensy 4.x supports 12-bit
@@ -38,15 +33,15 @@ public:
         encRTicks_ = encR_.read();
 
         // Battery voltage
-        float rawV   = (float)analogRead(VBAT_ADC_PIN) / 4095.f * 3.3f;
-        voltage_     = rawV * VBAT_DIV_RATIO;
+        float rawV   = (float)analogRead(cfg_.vbatAdcPin) / 4095.f * 3.3f;
+        voltage_     = rawV * cfg_.vbatDivRatio;
 
         // Current sense (bidirectional)
-        float rawC   = (float)analogRead(CURR_ADC_PIN) / 4095.f * 3300.f; // mV
-        current_     = (rawC - 1650.f) / CURR_SENS_MV_PER_A;
+        float rawC   = (float)analogRead(cfg_.currAdcPin) / 4095.f * 3300.f; // mV
+        current_     = (rawC - cfg_.currZeroMv) / cfg_.currSensMvPerA;
 
         // Temperature (NTC Steinhart-Hart simplified)
-        float rawT   = (float)analogRead(TEMP_ADC_PIN);
+        float rawT   = (float)analogRead(cfg_.tempAdcPin);
         if (rawT > 10.f) {
             float R     = 10000.f * (4095.f / rawT - 1.f); // 10 kΩ pull-up
             float lnR   = logf(R / 10000.f);
@@ -75,6 +70,7 @@ public:
 
 private:
     Encoder encL_, encR_;
+    SensorConfig cfg_;
     long    encLTicks_{0}, encRTicks_{0};
     float   voltage_{0.f}, current_{0.f}, temp_{25.f};
 };

@@ -69,6 +69,33 @@ static std::string otaProgress(int pct, const std::string& msg) {
     return ss.str();
 }
 
+// ---- Teensy firmware runtime-config command ----------------
+static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
+    std::ostringstream ss;
+    ss << "{"
+       << "\"cmd\":\"fw_cfg\"," 
+       << "\"l_rpwm\":" << cfg.teensy_l_rpwm_pin << ","
+       << "\"l_lpwm\":" << cfg.teensy_l_lpwm_pin << ","
+       << "\"l_en\":"   << cfg.teensy_l_en_pin << ","
+       << "\"r_rpwm\":" << cfg.teensy_r_rpwm_pin << ","
+       << "\"r_lpwm\":" << cfg.teensy_r_lpwm_pin << ","
+       << "\"r_en\":"   << cfg.teensy_r_en_pin << ","
+       << "\"enc_la\":" << cfg.teensy_enc_la_pin << ","
+       << "\"enc_lb\":" << cfg.teensy_enc_lb_pin << ","
+       << "\"enc_ra\":" << cfg.teensy_enc_ra_pin << ","
+       << "\"enc_rb\":" << cfg.teensy_enc_rb_pin << ","
+       << "\"vbat_adc\":" << cfg.teensy_vbat_adc_pin << ","
+       << "\"curr_adc\":" << cfg.teensy_curr_adc_pin << ","
+       << "\"temp_adc\":" << cfg.teensy_temp_adc_pin << ","
+       << "\"vbat_div\":" << cfg.teensy_vbat_div_ratio << ","
+       << "\"curr_zero_mv\":" << cfg.teensy_curr_zero_mv << ","
+       << "\"curr_sens_mv_per_a\":" << cfg.teensy_curr_sens_mv_per_a << ","
+       << "\"watchdog_ms\":" << cfg.teensy_watchdog_ms << ","
+       << "\"telem_ms\":" << cfg.teensy_telem_interval_ms
+       << "}";
+    return ss.str();
+}
+
 // ---- Main command dispatcher (called from WiFi and WebUI) ----
 // Forward declare — WebUiServer* is optional (may be null)
 class WebUiServer;
@@ -192,8 +219,14 @@ int main(int argc, char* argv[]) {
 
     // ---- Teensy serial bridge -----
     TeensyBridge teensy(cfg.teensy_port, cfg.serial_baud);
-    if (!teensy.open()) {
+    bool teensyOnline = teensy.open();
+    if (!teensyOnline) {
         std::cerr << "[main] WARNING: Teensy not connected on " << cfg.teensy_port << "\n";
+    } else if (cfg.teensy_push_fw_config) {
+        // Let the Teensy finish USB CDC startup, then push runtime config.
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        teensy.sendRaw(teensyFwConfigCommand(cfg));
+        std::cout << "[main] pushed teensy fw config from rover.conf\n";
     }
 
     // ---- GPIO controller ----------
