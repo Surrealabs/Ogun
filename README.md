@@ -2,7 +2,7 @@
 
 A full-stack rover platform built on top of a **BTT Pi 1.2** (Klipper board repurposed),
 using a **Teensy 4.1** as a motor/sensor hub, **BTS7960** H-bridge motor drivers,
-controlled from an **Android** app over **BLE** or **WiFi**.
+controlled from an **Android** app (or web wrapper) over **WiFi/WebSocket**.
 
 ---
 
@@ -11,22 +11,21 @@ controlled from an **Android** app over **BLE** or **WiFi**.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Android App (Kotlin)                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────┐  │
-│  │  BleManager  │  │WebSocketMgr  │  │  JoystickView +     │  │
-│  │  GATT client │  │  OkHttp WS   │  │  Camera MJPEG UI    │  │
-│  └──────┬───────┘  └──────┬───────┘  └─────────────────────┘  │
-└─────────┼──────────────────┼───────────────────────────────────┘
-   BLE 5.0│                  │ WebSocket (port 9000)
-   (GATT) │      WiFi        │ MJPEG   (port 8081 / 8082)
-┌─────────┼──────────────────┼───────────────────────────────────┐
-│         │   BTT Pi 1.2     │                                    │
+│  ┌──────────────┐  ┌─────────────────────┐                     │
+│  │WebSocketMgr  │  │  JoystickView +     │                     │
+│  │  OkHttp WS   │  │  Camera MJPEG UI    │                     │
+│  └──────┬───────┘  └─────────────────────┘                     │
+└─────────┼───────────────────────────────────────────────────────┘
+             │ WebSocket (port 9000)
+             │ MJPEG   (port 8081 / 8082)
+┌─────────┼───────────────────────────────────────────────────────┐
+│         │   BTT Pi 1.2                                          │
 │  ┌──────┴───────────────────┴──────────────────────────────┐   │
 │  │               rover_server (C++)                         │   │
-│  │  BleServer  │  WifiServer  │  CameraStream ×2           │   │
-│  │  (BlueZ     │  (WebSocket) │  (V4L2 + MJPEG HTTP)       │   │
-│  │   GATT)     │              │                             │   │
-│  │             │  GpioController (libgpiod)                 │   │
-│  │             │  TeensyOta (teensy_loader_cli)             │   │
+│  │  WifiServer  │  WebUiServer  │  CameraStream ×2          │   │
+│  │  (WebSocket) │  (HTTP + WS)  │  (V4L2 + MJPEG HTTP)      │   │
+│  │  GpioController (libgpiod)                                │   │
+│  │  TeensyOta (teensy_loader_cli)                            │   │
 │  └─────────────────────────────┬───────────────────────────┘   │
 │                                 │ USB Serial (115200 baud)       │
 └─────────────────────────────────┼───────────────────────────────┘
@@ -55,8 +54,8 @@ rover/
 │   │   ├── main.cpp        # Entry point + command dispatcher
 │   │   ├── Config.hpp/.cpp # /etc/rover/rover.conf loader
 │   │   ├── Protocol.hpp    # UUIDs, command strings, port numbers
-│   │   ├── ble/            # BlueZ GATT server (sdbus-c++)
 │   │   ├── wifi/           # WebSocket server (POSIX + OpenSSL)
+│   │   ├── webui/          # Embedded HTTP + WebSocket server
 │   │   ├── camera/         # V4L2 capture → MJPEG HTTP server
 │   │   ├── gpio/           # libgpiod output controller
 │   │   ├── serial/         # USB serial bridge to Teensy
@@ -265,7 +264,7 @@ Pi: /tmp/ogun-update.XXXXXX/
 
 ## Communication Protocol
 
-### Phone ↔ Pi (JSON over BLE or WebSocket)
+### Phone ↔ Pi (JSON over WebSocket)
 
 | Direction | Type | Payload keys |
 |-----------|------|--------------|
@@ -297,7 +296,6 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Control | WebSocket | 9000 |
 | Camera 0 | HTTP MJPEG | 8081 |
 | Camera 1 | HTTP MJPEG | 8082 |
-| BLE | GATT peripheral | — |
 
 ---
 
@@ -317,11 +315,9 @@ No physical button press needed (Teensy 4.x supports auto-reboot via USB).
 
 ### Pi (installed by `install.sh`)
 - `build-essential`, `cmake`, `ninja-build`
-- `sdbus-c++` ≥ 2.0 (built from source if not in apt)
 - `libgpiod-dev`
 - `libjpeg-dev`
 - `libssl-dev` (OpenSSL for WebSocket SHA1)
-- `bluez`, `bluez-tools`
 - `teensy_loader_cli` (built from source)
 
 ### Teensy (PlatformIO)

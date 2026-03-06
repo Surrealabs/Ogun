@@ -89,7 +89,7 @@ if $DO_SYNC; then
         "$PI_USER@$PI_IP":/usr/lib/aarch64-linux-gnu/ "$SYSROOT_DIR/usr/lib/aarch64-linux-gnu/" 2>/dev/null || \
     rsync -az --info=progress2 \
         "$PI_USER@$PI_IP":/usr/lib/arm-linux-gnueabihf/ "$SYSROOT_DIR/usr/lib/arm-linux-gnueabihf/" 2>/dev/null || true
-    # Also grab /usr/local (sdbus-c++ if built from source)
+    # Also grab /usr/local in case custom headers/libs are installed there
     rsync -az --info=progress2 \
         "$PI_USER@$PI_IP":/usr/local/include/ "$SYSROOT_DIR/usr/local/include/" 2>/dev/null || true
     rsync -az --info=progress2 \

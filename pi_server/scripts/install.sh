@@ -57,33 +57,9 @@ apt-get install -y \
     libudev-dev \
     libjpeg-dev \
     libssl-dev \
-    libdbus-1-dev \
-    bluez \
-    bluez-tools \
     python3-dbus
 
-# ---- 4. sdbus-c++ >= 2.0 ------------------------------------
-# Available in sid/bookworm or build from source
-if ! pkg-config --exists sdbus-c++-2 2>/dev/null; then
-    echo "[install] Building sdbus-c++ from source (single-threaded to avoid OOM)..."
-    SDBUS_TMP=$(mktemp -d)
-    git clone --depth=1 --branch v2.1.0 \
-        https://github.com/Kistler-Group/sdbus-cpp.git "$SDBUS_TMP/sdbus-cpp"
-    cmake -S "$SDBUS_TMP/sdbus-cpp" -B "$SDBUS_TMP/sdbus-cpp/build" \
-          -DCMAKE_BUILD_TYPE=MinSizeRel \
-          -DBUILD_SHARED_LIBS=ON \
-          -DBUILD_TESTS=OFF \
-          -DBUILD_DOC=OFF
-    cmake --build "$SDBUS_TMP/sdbus-cpp/build" -j"$MAX_JOBS"
-    cmake --install "$SDBUS_TMP/sdbus-cpp/build"
-    ldconfig
-    rm -rf "$SDBUS_TMP"
-    # Free pagecache after heavy compile
-    sync && echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
-    echo "[install] sdbus-c++ installed."
-fi
-
-# ---- 5. Teensy loader CLI (for OTA flashing) ----------------
+# ---- 4. Teensy loader CLI (for OTA flashing) ----------------
 if ! command -v teensy_loader_cli &>/dev/null; then
     echo "[install] Installing teensy_loader_cli..."
     apt-get install -y libhidapi-dev
@@ -95,7 +71,7 @@ if ! command -v teensy_loader_cli &>/dev/null; then
     rm -rf "$TLC_TMP"
 fi
 
-# ---- 6. Add Teensy udev rule --------------------------------
+# ---- 5. Add Teensy udev rule --------------------------------
 cat > /etc/udev/rules.d/49-teensy.rules << 'EOF'
 ATTRS{idVendor}=="16c0", ATTRS{idProduct}=="0478", ENV{ID_MM_DEVICE_IGNORE}="1"
 ATTRS{idVendor}=="16c0", ATTRS{idProduct}=="0483", ENV{ID_MM_DEVICE_IGNORE}="1"
@@ -104,14 +80,7 @@ EOF
 udevadm control --reload-rules
 udevadm trigger
 
-# ---- 7. Enable Bluetooth at boot ---------------------------
-systemctl enable bluetooth
-systemctl start bluetooth
-btmgmt le on     2>/dev/null || true
-btmgmt connectable on 2>/dev/null || true
-btmgmt advertising on 2>/dev/null || true
-
-# ---- 8. Build rover_server ---------------------------------
+# ---- 6. Build rover_server ---------------------------------
 echo "[install] Building rover_server with $MAX_JOBS job(s)..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR/../build"
@@ -122,14 +91,14 @@ cmake -S "$SCRIPT_DIR/.." -B "$BUILD_DIR" \
 cmake --build "$BUILD_DIR" -j"$MAX_JOBS"
 cmake --install "$BUILD_DIR"
 
-# ---- 9. Create config and sounds dirs ----------------------
+# ---- 7. Create config and sounds dirs ----------------------
 mkdir -p /etc/rover /opt/rover/sounds /tmp/rover_ota
 if [ ! -f /etc/rover/rover.conf ]; then
     cp "$SCRIPT_DIR/rover.conf.example" /etc/rover/rover.conf
     echo "[install] Created /etc/rover/rover.conf — edit it to match your hardware"
 fi
 
-# ---- 10. Install and start systemd service -----------------
+# ---- 8. Install and start systemd service -----------------
 systemctl daemon-reload
 systemctl enable rover.service
 systemctl restart rover.service

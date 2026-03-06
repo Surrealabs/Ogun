@@ -55,16 +55,7 @@ apt-get install -y \
     libgpiod2 \
     libjpeg62-turbo \
     libssl3 \
-    libdbus-1-3 \
-    bluez \
-    bluez-tools \
     libhidapi-hidraw0
-
-# Try to install sdbus-c++ runtime lib (may be built from source)
-apt-get install -y libsdbus-c++1 2>/dev/null || true
-
-# If sdbus-c++ .so was built from source, it lives in /usr/local/lib
-ldconfig
 
 # ---- 3. Install binary --------------------------------------
 install -m 755 "$BINARY" /usr/local/bin/rover_server
@@ -79,21 +70,14 @@ EOF
 udevadm control --reload-rules
 udevadm trigger
 
-# ---- 5. Bluetooth setup -------------------------------------
-systemctl enable bluetooth
-systemctl start bluetooth
-btmgmt le on     2>/dev/null || true
-btmgmt connectable on 2>/dev/null || true
-btmgmt advertising on 2>/dev/null || true
-
-# ---- 6. Config + dirs ---------------------------------------
+# ---- 5. Config + dirs ---------------------------------------
 mkdir -p /etc/rover /opt/rover/sounds /tmp/rover_ota
 if [ ! -f /etc/rover/rover.conf ]; then
     cp "$SCRIPT_DIR/rover.conf.example" /etc/rover/rover.conf
     echo "[deploy] Created /etc/rover/rover.conf — EDIT IT for your hardware!"
 fi
 
-# ---- 7. systemd service -------------------------------------
+# ---- 6. systemd service -------------------------------------
 cp "$SCRIPT_DIR/rover.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable rover.service

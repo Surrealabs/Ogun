@@ -33,7 +33,7 @@ if ! command -v aarch64-linux-gnu-g++ &>/dev/null; then
 fi
 
 # ---- 2. Create a minimal sysroot with ARM64 libs ------------
-#  We need headers + .so for: libgpiod, libjpeg, libssl, libdbus, sdbus-c++
+#  We need headers + .so for: libgpiod, libjpeg, libssl
 #  The easiest way: pull them from the Pi via rsync
 echo ""
 echo "[cross] You need ARM64 headers/libs. Two options:"
