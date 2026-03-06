@@ -274,8 +274,12 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Phone → Pi | `audio` | `file` |
 | Phone → Pi | `ota_begin` | `total` (chunk count) |
 | Phone → Pi | `ota` | `chunk` (index), `data` (base64) |
+| Phone → Pi | `cameras` | `enabled` (bool) |
+| Phone → Pi | `sleep` | — |
+| Phone → Pi | `wake` | — |
 | Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr`, `temp` |
 | Pi → Phone | `ota_prog` | `pct` (0-100), `msg` |
+| Pi → Phone | `power` | `sleeping`, `cameras_on` |
 
 ### Pi ↔ Teensy (JSON over USB Serial 115200)
 

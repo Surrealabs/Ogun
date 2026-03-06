@@ -14,6 +14,9 @@ namespace RoverCmd {
     constexpr const char* OTA     = "ota";     // chunk, total, data (base64)
     constexpr const char* STATUS  = "status";  // request a status snapshot
     constexpr const char* ESTOP   = "estop";   // emergency stop
+    constexpr const char* CAMERAS = "cameras"; // enabled (bool)
+    constexpr const char* SLEEP   = "sleep";   // low-power mode
+    constexpr const char* WAKE    = "wake";    // resume normal mode
 }
 
 // ---- Outbound status types (Pi → Phone) --------------------
@@ -21,6 +24,7 @@ namespace RoverStatus {
     constexpr const char* TELEMETRY = "telemetry"; // sensors from Teensy
     constexpr const char* GPIO_ACK  = "gpio_ack";
     constexpr const char* OTA_PROG  = "ota_prog";  // progress 0-100
+    constexpr const char* POWER     = "power";     // sleep/camera state
     constexpr const char* ERROR     = "error";
 }
 

@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <regex>
+#include <mutex>
 // Simple JSON helpers (no dependency)
 #include <map>
 
@@ -69,6 +70,20 @@ static std::string otaProgress(int pct, const std::string& msg) {
     return ss.str();
 }
 
+struct PowerState {
+    bool camerasOn{true};
+    bool sleeping{false};
+};
+
+static std::string powerStateJson(const PowerState& p) {
+    std::ostringstream ss;
+    ss << "{\"type\":\"" << RoverStatus::POWER << "\"," 
+       << "\"sleeping\":" << (p.sleeping ? "true" : "false") << ","
+       << "\"cameras_on\":" << (p.camerasOn ? "true" : "false")
+       << "}";
+    return ss.str();
+}
+
 // ---- Teensy firmware runtime-config command ----------------
 static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
     std::ostringstream ss;
@@ -107,9 +122,65 @@ static void dispatchCommand(const std::string& json,
                             TeensyOta& ota,
                             WifiServer& ws,
                             WebUiServer* webui,
-                            const RoverConfig& cfg)
+                            const RoverConfig& cfg,
+                            CameraStream& cam0,
+                            CameraStream& cam1,
+                            PowerState& power,
+                            std::mutex& powerMtx)
 {
     std::string type = jsonStr(json, "type");
+
+    // --- Camera power ---
+    if (type == RoverCmd::CAMERAS) {
+        bool enabled = jsonBool(json, "enabled");
+        std::lock_guard<std::mutex> lk(powerMtx);
+        if (enabled && !power.camerasOn) {
+            cam0.start();
+            cam1.start();
+            power.camerasOn = true;
+        } else if (!enabled && power.camerasOn) {
+            cam0.stop();
+            cam1.stop();
+            power.camerasOn = false;
+        }
+        broadcastAll(ws, webui, powerStateJson(power));
+        return;
+    }
+
+    // --- Sleep / wake ---
+    if (type == RoverCmd::SLEEP) {
+        std::lock_guard<std::mutex> lk(powerMtx);
+        power.sleeping = true;
+        if (power.camerasOn) {
+            cam0.stop();
+            cam1.stop();
+            power.camerasOn = false;
+        }
+        teensy.sendStop();
+        gpio.set(RoverGpio::LED_FWD, false);
+        gpio.set(RoverGpio::LED_REV, false);
+        broadcastAll(ws, webui, powerStateJson(power));
+        return;
+    }
+    if (type == RoverCmd::WAKE) {
+        std::lock_guard<std::mutex> lk(powerMtx);
+        power.sleeping = false;
+        if (!power.camerasOn) {
+            cam0.start();
+            cam1.start();
+            power.camerasOn = true;
+        }
+        broadcastAll(ws, webui, powerStateJson(power));
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(powerMtx);
+        if (power.sleeping && type != RoverCmd::STATUS && type != RoverCmd::ESTOP) {
+            // Ignore normal action commands while sleeping.
+            return;
+        }
+    }
 
     // --- ESTOP (highest priority) ---
     if (type == RoverCmd::ESTOP || type == "estop") {
@@ -261,8 +332,12 @@ int main(int argc, char* argv[]) {
     });
 
     // ---- Command handler shared by WiFi and WebUI ---
+    PowerState power;
+    std::mutex powerMtx;
+
     auto cmdHandler = [&](const std::string& json) {
-        dispatchCommand(json, teensy, gpio, ota, ws, webuiPtr, cfg);
+        dispatchCommand(json, teensy, gpio, ota, ws, webuiPtr, cfg,
+                        cam0, cam1, power, powerMtx);
     };
     ws.onMessage(cmdHandler);
     webui.onMessage(cmdHandler);
@@ -280,7 +355,12 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] WebSocket: ws://<ip>:" << cfg.ws_port << "\n";
 
     while (gRunning) {
-        teensy.requestSensors();
+        bool sleeping = false;
+        {
+            std::lock_guard<std::mutex> lk(powerMtx);
+            sleeping = power.sleeping;
+        }
+        if (!sleeping) teensy.requestSensors();
         std::this_thread::sleep_for(std::chrono::milliseconds(telPeriodMs));
     }
 

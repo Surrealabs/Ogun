@@ -243,6 +243,7 @@ void CameraStream::httpLoop() {
 // ---------- start / stop ------------------------------------
 
 bool CameraStream::start() {
+    if (running_) return true;
     running_ = true;
     captureThread_ = std::thread(&CameraStream::captureLoop, this);
     httpThread_    = std::thread(&CameraStream::httpLoop, this);
@@ -250,6 +251,7 @@ bool CameraStream::start() {
 }
 
 void CameraStream::stop() {
+    if (!running_ && !captureThread_.joinable() && !httpThread_.joinable()) return;
     running_ = false;
     if (captureThread_.joinable()) captureThread_.join();
     if (httpThread_.joinable())    httpThread_.join();
