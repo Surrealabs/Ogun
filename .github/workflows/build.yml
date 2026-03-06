@@ -111,6 +111,8 @@ jobs:
           # Self-update script
           cp scripts/apply-update.sh "$PKG_DIR/"
           chmod +x "$PKG_DIR/apply-update.sh"
+          cp ogun "$PKG_DIR/"
+          chmod +x "$PKG_DIR/ogun"
           cp scripts/rover-auto-update.sh "$PKG_DIR/"
           chmod +x "$PKG_DIR/rover-auto-update.sh"
           cp scripts/rover-auto-update.service "$PKG_DIR/"

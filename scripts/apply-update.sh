@@ -42,6 +42,12 @@ if [ -f "$SCRIPT_DIR/rover_server" ]; then
     echo "[update] Installed rover_server → /usr/local/bin/"
 fi
 
+# Install ogun CLI
+if [ -f "$SCRIPT_DIR/ogun" ]; then
+    install -m 755 "$SCRIPT_DIR/ogun" /usr/local/bin/ogun
+    echo "[update] Installed ogun CLI → /usr/local/bin/ogun"
+fi
+
 # Create directories
 mkdir -p /etc/rover /opt/rover/sounds /tmp/rover_ota
 
