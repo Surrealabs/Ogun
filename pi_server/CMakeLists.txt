@@ -8,10 +8,6 @@ set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 # ---- Find packages -----------------------------------------
 find_package(PkgConfig REQUIRED)
 
-# BlueZ / D-Bus via sdbus-c++
-# sdbus-c++ 2.x installs as "sdbus-c++" cmake package
-find_package(sdbus-c++ 2.0 REQUIRED)
-
 # libgpiod
 pkg_check_modules(GPIOD REQUIRED libgpiod)
 
@@ -29,7 +25,6 @@ set(SOURCES
     src/main.cpp
     src/Config.cpp
     src/serial/TeensyBridge.cpp
-    src/ble/BleServer.cpp
     src/wifi/WifiServer.cpp
     src/webui/WebUiServer.cpp
     src/camera/CameraStream.cpp
@@ -46,7 +41,6 @@ target_include_directories(rover_server PRIVATE
 )
 
 target_link_libraries(rover_server PRIVATE
-    SDBusCpp::sdbus-c++
     ${GPIOD_LIBRARIES}
     ${JPEG_LIBRARIES}
     OpenSSL::SSL

@@ -60,26 +60,12 @@ jobs:
               apt-get install -y --no-install-recommends \
                 build-essential cmake ninja-build pkg-config \
                 libgpiod-dev libjpeg-dev libssl-dev \
-                libdbus-1-dev libudev-dev libsystemd-dev \
+                libudev-dev \
                 git ca-certificates
-
-              # Build and install sdbus-c++ 2.x (not in bookworm repos)
-              git clone --depth=1 --branch v2.1.0 \
-                https://github.com/Kistler-Group/sdbus-cpp.git /tmp/sdbus-cpp
-              cmake -S /tmp/sdbus-cpp -B /tmp/sdbus-cpp/build \
-                -DCMAKE_BUILD_TYPE=MinSizeRel \
-                -DBUILD_SHARED_LIBS=ON \
-                -DBUILD_TESTS=OFF \
-                -DBUILD_DOC=OFF \
-                -GNinja
-              cmake --build /tmp/sdbus-cpp/build -j$(nproc)
-              cmake --install /tmp/sdbus-cpp/build
-              ldconfig
 
               # Build rover_server
               cmake -S . -B build \
                 -DCMAKE_BUILD_TYPE=MinSizeRel \
-                -DCMAKE_PREFIX_PATH=/usr/local \
                 -GNinja
               cmake --build build -j$(nproc)
               strip build/rover_server
