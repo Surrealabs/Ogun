@@ -30,6 +30,8 @@ struct MotorPins {
     uint8_t en;     // enable pin (active HIGH)
 };
 
+static constexpr float MOTOR_ZERO_EPSILON = 0.01f;
+
 class MotorController {
 public:
     MotorController(const MotorPins& left, const MotorPins& right, const MotorTuning& tuning = MotorTuning())
@@ -42,8 +44,9 @@ public:
         pinMode(right_.rpwm, OUTPUT);
         pinMode(right_.lpwm, OUTPUT);
         pinMode(right_.en,   OUTPUT);
-        digitalWrite(left_.en,  HIGH);
-        digitalWrite(right_.en, HIGH);
+        // Start fully disabled, then stop() sets known-safe output states.
+        digitalWrite(left_.en,  LOW);
+        digitalWrite(right_.en, LOW);
         stop();
     }
 
@@ -88,7 +91,8 @@ public:
     void stop() {
         outLeft_ = 0.0f;
         outRight_ = 0.0f;
-        drive(0.f, 0.f);
+        setLeft(0.0f);
+        setRight(0.0f);
         lastUpdateMs_ = millis();
     }
 
@@ -117,6 +121,14 @@ private:
 
     void setMotor(const MotorPins& m, float speed) {
         speed = constrain(speed, -1.f, 1.f);
+        if (fabsf(speed) <= MOTOR_ZERO_EPSILON) {
+            analogWrite(m.rpwm, 0);
+            analogWrite(m.lpwm, 0);
+            digitalWrite(m.en, LOW);
+            return;
+        }
+
+        digitalWrite(m.en, HIGH);
         uint8_t pwm = (uint8_t)(fabsf(speed) * 255.f);
         if (speed >= 0.f) {
             analogWrite(m.rpwm, pwm);
