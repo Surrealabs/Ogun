@@ -45,6 +45,10 @@ struct RuntimeConfig {
         fwcfg::ACCEL_UP_PER_S,
         fwcfg::ACCEL_DOWN_PER_S
     };
+    float lowVoltageCutoff{fwcfg::LOW_VOLTAGE_CUTOFF};
+    float lowVoltageResume{fwcfg::LOW_VOLTAGE_RESUME};
+    float inputDeadband{fwcfg::INPUT_DEADBAND};
+    bool  requireArm{fwcfg::REQUIRE_ARM};
 };
 
 static RuntimeConfig gCfg;
@@ -55,6 +59,13 @@ static uint32_t lastDriveMs  = 0;
 static uint32_t lastTelemMs  = 0;
 static char     rxBuf[256];
 static uint8_t  rxIdx = 0;
+
+// ---- Safety state ------------------------------------------
+static bool     armed         = false;  // motors disabled until arm cmd
+static bool     estopped      = false;  // emergency stop latched
+static bool     lowVoltLatch  = false;  // battery too low
+static uint32_t watchdogTrips = 0;      // how many times watchdog fired
+static uint32_t bootMs        = 0;      // millis() at boot
 
 // ---- Simple JSON helpers (no heap) -------------------------
 static float jsonGetFloat(const char* json, const char* key) {
@@ -96,6 +107,27 @@ static float clampFloat(float v, float lo, float hi) {
     return v;
 }
 
+// Apply deadband: values within +/- deadband snap to zero
+static float applyDeadband(float v, float deadband) {
+    if (fabsf(v) < deadband) return 0.0f;
+    return v;
+}
+
+// Returns true if motors are allowed to run
+static bool motorsAllowed() {
+    if (estopped) return false;
+    if (lowVoltLatch) return false;
+    if (gCfg.requireArm && !armed) return false;
+    return true;
+}
+
+static void forceStop() {
+    if (motors) {
+        motors->stop();
+        motors->enable(false);
+    }
+}
+
 static void applyRuntimeConfig(const RuntimeConfig& cfg) {
     if (motors) motors->stop();
 
@@ -109,7 +141,7 @@ static void applyRuntimeConfig(const RuntimeConfig& cfg) {
 }
 
 static void emitConfig() {
-    char buf[320];
+    char buf[512];
     snprintf(buf, sizeof(buf),
         "{\"type\":\"fw_cfg\","
         "\"l_rpwm\":%u,\"l_lpwm\":%u,\"l_en\":%u,"
@@ -120,7 +152,11 @@ static void emitConfig() {
         "\"watchdog_ms\":%lu,\"telem_ms\":%lu,"
         "\"drive_max_fwd\":%.3f,\"drive_max_rev\":%.3f,\"turn_max\":%.3f,"
         "\"throttle_expo\":%.3f,\"turn_expo\":%.3f,"
-        "\"accel_up_per_s\":%.3f,\"accel_down_per_s\":%.3f}",
+        "\"accel_up_per_s\":%.3f,\"accel_down_per_s\":%.3f,"
+        "\"low_volt_cutoff\":%.2f,\"low_volt_resume\":%.2f,"
+        "\"input_deadband\":%.3f,\"require_arm\":%s,"
+        "\"armed\":%s,\"estopped\":%s,\"low_volt_latch\":%s,"
+        "\"watchdog_trips\":%lu}",
         gCfg.left.rpwm, gCfg.left.lpwm, gCfg.left.en,
         gCfg.right.rpwm, gCfg.right.lpwm, gCfg.right.en,
         gCfg.encLA, gCfg.encLB, gCfg.encRA, gCfg.encRB,
@@ -129,20 +165,58 @@ static void emitConfig() {
         (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs,
         gCfg.motorTuning.maxForward, gCfg.motorTuning.maxReverse, gCfg.motorTuning.maxTurn,
         gCfg.motorTuning.throttleExpo, gCfg.motorTuning.turnExpo,
-        gCfg.motorTuning.accelUpPerSec, gCfg.motorTuning.accelDownPerSec);
+        gCfg.motorTuning.accelUpPerSec, gCfg.motorTuning.accelDownPerSec,
+        gCfg.lowVoltageCutoff, gCfg.lowVoltageResume,
+        gCfg.inputDeadband, gCfg.requireArm ? "true" : "false",
+        armed ? "true" : "false", estopped ? "true" : "false",
+        lowVoltLatch ? "true" : "false",
+        (unsigned long)watchdogTrips);
     Serial.println(buf);
 }
 
 // ---- Process one complete JSON line ------------------------
 void processCommand(const char* line) {
+    // --- Emergency stop (latching — requires explicit clear) ---
+    if (jsonHasKey(line, "\"estop\"")) {
+        estopped = true;
+        forceStop();
+        Serial.println("{\"type\":\"estop_ack\",\"estopped\":true}");
+        return;
+    }
+    // --- Clear emergency stop ---
+    if (jsonHasKey(line, "\"estop_clear\"")) {
+        estopped = false;
+        Serial.println("{\"type\":\"estop_ack\",\"estopped\":false}");
+        return;
+    }
+    // --- Arm motors (must be sent before driving) ---
+    if (jsonHasKey(line, "\"arm\"")) {
+        armed = true;
+        lastDriveMs = millis();  // reset watchdog on arm
+        Serial.println("{\"type\":\"arm_ack\",\"armed\":true}");
+        return;
+    }
+    // --- Disarm motors ---
+    if (jsonHasKey(line, "\"disarm\"")) {
+        armed = false;
+        forceStop();
+        Serial.println("{\"type\":\"arm_ack\",\"armed\":false}");
+        return;
+    }
+
     if (jsonHasKey(line, "\"stop\"")) {
         motors->stop();
         lastDriveMs = millis();  // reset watchdog
         return;
     }
     if (jsonHasKey(line, "\"drive\"")) {
-        float l = jsonGetFloat(line, "\"l\"");
-        float r = jsonGetFloat(line, "\"r\"");
+        if (!motorsAllowed()) {
+            motors->stop();
+            lastDriveMs = millis();
+            return;
+        }
+        float l = applyDeadband(jsonGetFloat(line, "\"l\""), gCfg.inputDeadband);
+        float r = applyDeadband(jsonGetFloat(line, "\"r\""), gCfg.inputDeadband);
         motors->drive(l, r);
         lastDriveMs = millis();
         return;
@@ -198,6 +272,11 @@ void processCommand(const char* line) {
         if (jsonTryGetFloat(line, "\"accel_up_per_s\"", &vf)) cfg.motorTuning.accelUpPerSec = clampFloat(vf, 0.05f, 20.0f);
         if (jsonTryGetFloat(line, "\"accel_down_per_s\"", &vf)) cfg.motorTuning.accelDownPerSec = clampFloat(vf, 0.05f, 30.0f);
 
+        if (jsonTryGetFloat(line, "\"low_volt_cutoff\"", &vf)) cfg.lowVoltageCutoff = clampFloat(vf, 0.0f, 30.0f);
+        if (jsonTryGetFloat(line, "\"low_volt_resume\"", &vf)) cfg.lowVoltageResume = clampFloat(vf, 0.0f, 30.0f);
+        if (jsonTryGetFloat(line, "\"input_deadband\"", &vf)) cfg.inputDeadband = clampFloat(vf, 0.0f, 0.3f);
+        if (jsonTryGetInt(line, "\"require_arm\"", &vi)) cfg.requireArm = (vi != 0);
+
         applyRuntimeConfig(cfg);
         emitConfig();
         return;
@@ -209,12 +288,21 @@ void setup() {
     Serial.begin(115200);  // USB CDC to Pi
     while (!Serial && millis() < 3000) {}  // wait up to 3 s
 
+    armed = !fwcfg::REQUIRE_ARM;  // start disarmed if arm required
+    estopped = false;
+    lowVoltLatch = false;
+    watchdogTrips = 0;
+
     applyRuntimeConfig(gCfg);
 
+    // Motors start disabled until armed
+    if (!armed) motors->enable(false);
+
+    bootMs = millis();
     lastDriveMs = millis();
     lastTelemMs = millis();
 
-    Serial.println("{\"type\":\"boot\",\"msg\":\"rover-teensy-ready\"}");
+    Serial.println("{\"type\":\"boot\",\"msg\":\"rover-teensy-ready\",\"require_arm\":true}");
 }
 
 // ---- Arduino loop ------------------------------------------
@@ -237,10 +325,39 @@ void loop() {
         }
     }
 
+    // --- Low-voltage cutoff (hysteresis) --------------------
+    if (gCfg.lowVoltageCutoff > 0.0f) {
+        float v = sensors->volt();
+        // Only check after we've had at least one sensor reading (voltage > 0 means battery detected)
+        if (v > 1.0f) {
+            if (!lowVoltLatch && v < gCfg.lowVoltageCutoff) {
+                lowVoltLatch = true;
+                forceStop();
+                Serial.println("{\"type\":\"safety\",\"event\":\"low_voltage\",\"volt\":" + String(v, 2) + "}");
+            } else if (lowVoltLatch && v > gCfg.lowVoltageResume) {
+                lowVoltLatch = false;
+                Serial.println("{\"type\":\"safety\",\"event\":\"voltage_ok\",\"volt\":" + String(v, 2) + "}");
+            }
+        }
+    }
+
     // --- Watchdog: stop motors if no drive cmd received ----
     if ((now - lastDriveMs) > gCfg.watchdogMs) {
         motors->stop();
-        lastDriveMs = now;  // prevent spamming
+        if (armed) {
+            watchdogTrips++;
+            // Report watchdog trip once (not every loop)
+            static uint32_t lastWdReportMs = 0;
+            if ((now - lastWdReportMs) > 2000) {
+                char wdBuf[100];
+                snprintf(wdBuf, sizeof(wdBuf),
+                    "{\"type\":\"safety\",\"event\":\"watchdog\",\"trips\":%lu}",
+                    (unsigned long)watchdogTrips);
+                Serial.println(wdBuf);
+                lastWdReportMs = now;
+            }
+        }
+        lastDriveMs = now;  // prevent spamming stop()
     }
 
     // --- Auto-telemetry -------------------------------------

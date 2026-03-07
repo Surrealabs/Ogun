@@ -208,7 +208,9 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
     << "\"accel_up_per_s\":" << cfg.teensy_accel_up_per_s << ","
     << "\"accel_down_per_s\":" << cfg.teensy_accel_down_per_s << ","
        << "\"watchdog_ms\":" << cfg.teensy_watchdog_ms << ","
-       << "\"telem_ms\":" << cfg.teensy_telem_interval_ms
+       << "\"telem_ms\":" << cfg.teensy_telem_interval_ms << ","
+       << "\"input_deadband\":" << cfg.deadband << ","
+       << "\"require_arm\":1"
        << "}";
     return ss.str();
 }
@@ -365,6 +367,7 @@ static void dispatchCommand(const std::string& json,
 
     // --- ESTOP (highest priority) ---
     if (type == RoverCmd::ESTOP || type == "estop") {
+        teensy.sendRaw("{\"cmd\":\"estop\"}");
         teensy.sendStop();
         gpio.set(RoverGpio::LED_FWD, false);
         gpio.set(RoverGpio::LED_REV, false);
@@ -479,6 +482,10 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         teensy.sendRaw(teensyFwConfigCommand(cfg));
         std::cout << "[main] pushed teensy fw config from rover.conf\n";
+        // Arm motors so Teensy allows drive commands
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        teensy.sendRaw("{\"cmd\":\"arm\"}");
+        std::cout << "[main] armed teensy motors\n";
     }
 
     // ---- GPIO controller ----------
@@ -547,6 +554,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "\n[main] Shutting down...\n";
     teensy.sendStop();
+    teensy.sendRaw("{\"cmd\":\"disarm\"}");
     ws.stop();
     webui.stop();
     cam0.stop();

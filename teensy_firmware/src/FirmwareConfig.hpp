@@ -63,7 +63,7 @@ namespace fwcfg {
 
 // ---- Timing -------------------------------------------------
 #ifndef ROVER_WATCHDOG_MS
-#define ROVER_WATCHDOG_MS 500
+#define ROVER_WATCHDOG_MS 250
 #endif
 #ifndef ROVER_TELEM_INTERVAL_MS
 #define ROVER_TELEM_INTERVAL_MS 100
@@ -71,25 +71,41 @@ namespace fwcfg {
 
 // ---- Drive behavior tuning ----------------------------------
 #ifndef ROVER_DRIVE_MAX_FWD
-#define ROVER_DRIVE_MAX_FWD 1.0f
+#define ROVER_DRIVE_MAX_FWD 0.45f
 #endif
 #ifndef ROVER_DRIVE_MAX_REV
-#define ROVER_DRIVE_MAX_REV 1.0f
+#define ROVER_DRIVE_MAX_REV 0.35f
 #endif
 #ifndef ROVER_TURN_MAX
-#define ROVER_TURN_MAX 1.0f
+#define ROVER_TURN_MAX 0.50f
 #endif
 #ifndef ROVER_THROTTLE_EXPO
-#define ROVER_THROTTLE_EXPO 1.0f
+#define ROVER_THROTTLE_EXPO 2.0f
 #endif
 #ifndef ROVER_TURN_EXPO
-#define ROVER_TURN_EXPO 1.0f
+#define ROVER_TURN_EXPO 1.5f
 #endif
 #ifndef ROVER_ACCEL_UP_PER_S
-#define ROVER_ACCEL_UP_PER_S 3.0f
+#define ROVER_ACCEL_UP_PER_S 1.2f
 #endif
 #ifndef ROVER_ACCEL_DOWN_PER_S
-#define ROVER_ACCEL_DOWN_PER_S 5.0f
+#define ROVER_ACCEL_DOWN_PER_S 8.0f
+#endif
+
+// ---- Safety -------------------------------------------------
+// Low-voltage cutoff: set to 0.0 to disable (BMS handles cutoff).
+// Only enable if you have a voltage divider wired to the VBAT ADC pin.
+#ifndef ROVER_LOW_VOLTAGE_CUTOFF
+#define ROVER_LOW_VOLTAGE_CUTOFF 0.0f
+#endif
+#ifndef ROVER_LOW_VOLTAGE_RESUME
+#define ROVER_LOW_VOLTAGE_RESUME 0.0f
+#endif
+#ifndef ROVER_INPUT_DEADBAND
+#define ROVER_INPUT_DEADBAND 0.05f
+#endif
+#ifndef ROVER_REQUIRE_ARM
+#define ROVER_REQUIRE_ARM 1
 #endif
 
 constexpr uint8_t L_RPWM = ROVER_L_RPWM_PIN;
@@ -123,5 +139,10 @@ constexpr float THROTTLE_EXPO   = ROVER_THROTTLE_EXPO;
 constexpr float TURN_EXPO       = ROVER_TURN_EXPO;
 constexpr float ACCEL_UP_PER_S  = ROVER_ACCEL_UP_PER_S;
 constexpr float ACCEL_DOWN_PER_S = ROVER_ACCEL_DOWN_PER_S;
+
+constexpr float LOW_VOLTAGE_CUTOFF = ROVER_LOW_VOLTAGE_CUTOFF;
+constexpr float LOW_VOLTAGE_RESUME = ROVER_LOW_VOLTAGE_RESUME;
+constexpr float INPUT_DEADBAND     = ROVER_INPUT_DEADBAND;
+constexpr bool  REQUIRE_ARM        = ROVER_REQUIRE_ARM;
 
 } // namespace fwcfg
