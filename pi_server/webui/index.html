@@ -46,6 +46,13 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 #app.controls-hidden #estop-btn {
   display:none;
 }
+#app.layout-edit-mode [data-layout-key] {
+  outline: 1px dashed var(--warn);
+  cursor: grab;
+}
+#app.layout-edit-mode #joy-row canvas.joystick {
+  pointer-events: none;
+}
 
 /* ---- Sidebar ---- */
 #sidebar {
@@ -92,9 +99,9 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 }
 #mirror-wrap {
   position:absolute;
-  top:8px;
+  top:14%;
   left:50%;
-  transform:translateX(-50%);
+  transform:translate(-50%, -50%);
   width:min(26vw, 300px);
   height:min(15vw, 170px);
   min-width:180px;
@@ -104,7 +111,6 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
   border-radius:8px;
   overflow:hidden;
   z-index:9;
-  cursor:pointer;
   box-shadow:0 6px 24px rgba(0,0,0,0.55);
 }
 #cam-mirror {
@@ -126,24 +132,44 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 
 /* ---- Joystick overlay row ---- */
 #joy-row {
-  display:flex; justify-content:space-between; padding:8px 20px;
-  height:180px; flex-shrink:0; background:rgba(0,0,0,0.3);
+  position:absolute;
+  inset:0;
+  z-index:14;
+  pointer-events:none;
 }
-.joy-container { width:160px; height:160px; position:relative; }
+.joy-container {
+  position:absolute;
+  width:160px;
+  height:160px;
+  transform:translate(-50%, -50%);
+  pointer-events:auto;
+}
 
 /* ---- Joystick canvas ---- */
-canvas.joystick { width:160px; height:160px; cursor:grab; }
+canvas.joystick {
+  width:160px;
+  height:160px;
+  border-radius:50%;
+  background:rgba(0,0,0,0.24);
+  border:1px solid rgba(255,255,255,0.18);
+  backdrop-filter: blur(2px);
+}
 
 /* ---- E-STOP overlay ---- */
 #estop-btn {
-  position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+  position:absolute;
+  left:50%;
+  top:86%;
+  transform:translate(-50%, -50%);
   width:80px; height:80px; border-radius:50%; background:var(--danger); border:3px solid #fff;
   color:#fff; font-weight:900; font-size:13px; cursor:pointer; z-index:20;
   display:flex; align-items:center; justify-content:center;
-  box-shadow: 0 0 20px rgba(248,81,73,0.5);
+  background:rgba(248,81,73,0.74);
+  box-shadow: 0 0 20px rgba(248,81,73,0.46);
+  backdrop-filter: blur(2px);
   transition: transform 0.1s;
 }
-#estop-btn:active { transform: translateX(-50%) scale(0.9); }
+#estop-btn:active { transform: translate(-50%, -50%) scale(0.92); }
 
 /* ---- Floating controls (editable layout) ---- */
 #floating-controls {
@@ -177,7 +203,7 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   cursor:grab;
 }
 #floating-controls.edit-mode::after {
-  content:'Edit mode: drag controls, tap Save';
+  content:'Edit mode: drag controls (grid snap), tap Save';
   position:absolute;
   top:10px;
   left:50%;
@@ -282,10 +308,9 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
 /* ---- Responsive: portrait phone ---- */
 @media (max-width:700px) {
   #sidebar { display:none; }
-  #joy-row { height:140px; padding:4px 10px; }
   .joy-container { width:130px; height:130px; }
   canvas.joystick { width:130px; height:130px; }
-  #estop-btn { width:60px; height:60px; font-size:11px; bottom:10px; }
+  #estop-btn { width:60px; height:60px; font-size:11px; }
 }
 </style>
 </head>
@@ -302,10 +327,9 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   <button class="btn" id="btnSidePanel" title="Show/hide side panel">Side</button>
   <button class="btn" id="btnFocus" title="Hide/show top and side for full camera/control">Focus</button>
   <button class="btn" id="btnControls" title="Hide/show joystick and overlay controls">Controls</button>
-  <button class="btn" id="btnEditLayout" title="Move horn/aux buttons">Edit</button>
+  <button class="btn" id="btnEditLayout" title="Move on-screen controls">Edit</button>
   <button class="btn" id="btnKeybinds" title="Configure keyboard mappings">Keybinds</button>
   <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
-  <button class="btn" id="btnSwapCam" title="Swap front/rear main camera">Front Main</button>
   <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
   <button class="btn" id="btnCheckUpdates" title="Trigger rover update check now">Check Updates</button>
   <span class="gamepad-icon" id="gamepadIcon" title="Gamepad">&#127918;</span>
@@ -352,29 +376,30 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
     <div id="cam-row">
       <img id="cam-main" alt="Primary camera view">
       <span id="cam-main-label">MAIN: FRONT</span>
-      <div id="mirror-wrap" title="Click to swap front/rear">
+      <div id="mirror-wrap" title="Mirror camera feed" data-layout-key="mirror_wrap">
         <img id="cam-mirror" alt="Mirror camera view">
         <span id="cam-mirror-label">MIRROR: REAR</span>
       </div>
     </div>
     <div id="joy-row">
-      <div class="joy-container">
+      <div class="joy-container" data-layout-key="joy_left">
         <canvas class="joystick" id="joyLeft" width="320" height="320"></canvas>
       </div>
-      <div class="joy-container">
+      <div class="joy-container" data-layout-key="joy_right">
         <canvas class="joystick" id="joyRight" width="320" height="320"></canvas>
       </div>
     </div>
 
     <div id="floating-controls">
-      <button class="float-btn" data-pin="horn" data-kind="momentary" data-key="horn">&#128227; Horn</button>
-      <button class="float-btn" data-pin="aux1" data-kind="toggle" data-key="aux1">AUX 1</button>
-      <button class="float-btn" data-pin="aux2" data-kind="toggle" data-key="aux2">AUX 2</button>
-      <button class="float-btn" data-pin="led_fwd" data-kind="toggle" data-key="led_fwd">&#128161; Fwd</button>
-      <button class="float-btn" data-pin="led_rev" data-kind="toggle" data-key="led_rev">&#128308; Rev</button>
+      <button class="float-btn" data-pin="horn" data-kind="momentary" data-layout-key="horn">&#128227; Horn</button>
+      <button class="float-btn" data-pin="aux1" data-kind="toggle" data-layout-key="aux1">AUX 1</button>
+      <button class="float-btn" data-pin="aux2" data-kind="toggle" data-layout-key="aux2">AUX 2</button>
+      <button class="float-btn" data-pin="led_fwd" data-kind="toggle" data-layout-key="led_fwd">&#128161; Fwd</button>
+      <button class="float-btn" data-pin="led_rev" data-kind="toggle" data-layout-key="led_rev">&#128308; Rev</button>
+      <button class="float-btn" id="btnFullscreen" data-action="fullscreen" data-layout-key="fullscreen">Fullscreen</button>
     </div>
 
-    <button id="estop-btn" onclick="sendEstop()">E-STOP</button>
+    <button id="estop-btn" data-layout-key="estop">E-STOP</button>
   </div>
 </div>
 </div>
@@ -449,12 +474,18 @@ let mainCamera = 'front';
 const LAYOUT_KEY = 'ogun-float-controls-v1';
 const PANEL_KEY = 'ogun-panel-prefs-v1';
 const KEYBINDS_KEY = 'ogun-keybinds-v1';
+const GRID_SNAP_PERCENT = 2;
 const defaultControlLayout = {
   horn:    { x: 83, y: 70 },
   aux1:    { x: 16, y: 68 },
   aux2:    { x: 16, y: 80 },
   led_fwd: { x: 83, y: 82 },
-  led_rev: { x: 83, y: 94 }
+  led_rev: { x: 83, y: 94 },
+  mirror_wrap: { x: 50, y: 14 },
+  joy_left: { x: 16, y: 80 },
+  joy_right: { x: 84, y: 80 },
+  estop: { x: 50, y: 86 },
+  fullscreen: { x: 50, y: 20 }
 };
 const defaultKeybinds = {
   forward: 'w',
@@ -483,7 +514,6 @@ function sendPin(pin, state) {
 
 function updatePowerButtons() {
   $('btnCameras').textContent = camerasEnabled ? 'Cameras On' : 'Cameras Off';
-  $('btnSwapCam').textContent = mainCamera === 'front' ? 'Front Main' : 'Rear Main';
   $('btnSleep').textContent = roverSleeping ? 'Wake' : 'Sleep';
   $('btnSleep').classList.toggle('danger', !roverSleeping);
   $('btnSleep').classList.toggle('accent', roverSleeping);
@@ -505,10 +535,6 @@ function setMainCamera(which) {
   updatePowerButtons();
 }
 
-function swapMainCamera() {
-  setMainCamera(mainCamera === 'front' ? 'rear' : 'front');
-}
-
 function setCamerasEnabled(enabled, send = true) {
   camerasEnabled = !!enabled;
   updatePowerButtons();
@@ -524,8 +550,8 @@ function setRoverSleeping(enabled, send = true) {
 }
 
 function applyControlLayout(layout) {
-  document.querySelectorAll('#floating-controls .float-btn').forEach(btn => {
-    const key = btn.dataset.key;
+  document.querySelectorAll('[data-layout-key]').forEach(btn => {
+    const key = btn.dataset.layoutKey;
     const pos = layout[key] || defaultControlLayout[key];
     if (!pos) return;
     btn.style.left = pos.x + '%';
@@ -546,13 +572,56 @@ function loadControlLayout() {
 
 function saveControlLayout() {
   const out = {};
-  document.querySelectorAll('#floating-controls .float-btn').forEach(btn => {
-    const key = btn.dataset.key;
+  document.querySelectorAll('[data-layout-key]').forEach(btn => {
+    const key = btn.dataset.layoutKey;
     const x = parseFloat(btn.style.left);
     const y = parseFloat(btn.style.top);
     if (!isNaN(x) && !isNaN(y)) out[key] = { x, y };
   });
   localStorage.setItem(LAYOUT_KEY, JSON.stringify(out));
+}
+
+function installLayoutDraggable(el) {
+  let dragging = false;
+  const snap = value => Math.round(value / GRID_SNAP_PERCENT) * GRID_SNAP_PERCENT;
+  el.addEventListener('pointerdown', ev => {
+    if (!editMode) return;
+    dragging = true;
+    el.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  });
+  el.addEventListener('pointermove', ev => {
+    if (!dragging || !editMode) return;
+    const rect = $('center').getBoundingClientRect();
+    const x = ((ev.clientX - rect.left) / rect.width) * 100;
+    const y = ((ev.clientY - rect.top) / rect.height) * 100;
+    const cx = Math.max(4, Math.min(96, snap(x)));
+    const cy = Math.max(6, Math.min(94, snap(y)));
+    el.style.left = cx + '%';
+    el.style.top = cy + '%';
+    ev.preventDefault();
+  });
+  el.addEventListener('pointerup', ev => {
+    if (!dragging) return;
+    dragging = false;
+    try { el.releasePointerCapture(ev.pointerId); } catch (_) {}
+  });
+}
+
+function updateFullscreenButton() {
+  const btn = $('btnFullscreen');
+  if (!btn) return;
+  const active = !!document.fullscreenElement;
+  btn.textContent = active ? 'Exit Full' : 'Fullscreen';
+  btn.classList.toggle('active', active);
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen().catch(() => {});
+  }
 }
 
 function updateRestoreButtons() {
@@ -660,6 +729,7 @@ function normalizeKey(k) {
 function setEditMode(enabled) {
   editMode = !!enabled;
   floatingControls.classList.toggle('edit-mode', editMode);
+  appEl.classList.toggle('layout-edit-mode', editMode);
   if (!editMode) saveControlLayout();
   updateRestoreButtons();
 }
@@ -667,6 +737,9 @@ function setEditMode(enabled) {
 function installFloatingControls() {
   const layout = loadControlLayout();
   applyControlLayout(layout);
+  document.querySelectorAll('[data-layout-key]').forEach(installLayoutDraggable);
+  document.addEventListener('fullscreenchange', updateFullscreenButton);
+  updateFullscreenButton();
 
   document.querySelectorAll('#floating-controls .float-btn').forEach(btn => {
     btn.addEventListener('click', ev => {
@@ -675,6 +748,13 @@ function installFloatingControls() {
         ev.stopPropagation();
         return;
       }
+
+      const action = btn.dataset.action;
+      if (action === 'fullscreen') {
+        toggleFullscreen();
+        return;
+      }
+
       const pin = btn.dataset.pin;
       const kind = btn.dataset.kind;
       if (kind === 'momentary') {
@@ -687,29 +767,14 @@ function installFloatingControls() {
       }
     });
 
-    let dragging = false;
-    btn.addEventListener('pointerdown', ev => {
-      if (!editMode) return;
-      dragging = true;
-      btn.setPointerCapture(ev.pointerId);
+  });
+
+  $('estop-btn').addEventListener('click', ev => {
+    if (editMode) {
       ev.preventDefault();
-    });
-    btn.addEventListener('pointermove', ev => {
-      if (!dragging || !editMode) return;
-      const rect = floatingControls.getBoundingClientRect();
-      const x = ((ev.clientX - rect.left) / rect.width) * 100;
-      const y = ((ev.clientY - rect.top) / rect.height) * 100;
-      const cx = Math.max(5, Math.min(95, x));
-      const cy = Math.max(8, Math.min(95, y));
-      btn.style.left = cx + '%';
-      btn.style.top = cy + '%';
-      ev.preventDefault();
-    });
-    btn.addEventListener('pointerup', ev => {
-      if (!dragging) return;
-      dragging = false;
-      try { btn.releasePointerCapture(ev.pointerId); } catch (_) {}
-    });
+      return;
+    }
+    sendEstop();
   });
 }
 
@@ -740,8 +805,6 @@ function initPanelPrefs() {
     setControlsHidden(false);
   });
   $('btnCameras').addEventListener('click', () => setCamerasEnabled(!camerasEnabled));
-  $('btnSwapCam').addEventListener('click', swapMainCamera);
-  $('mirror-wrap').addEventListener('click', swapMainCamera);
   $('btnSleep').addEventListener('click', () => setRoverSleeping(!roverSleeping));
   $('btnCheckUpdates').addEventListener('click', () => {
     sendJson({ type: 'update_check' });
@@ -985,11 +1048,11 @@ class Joystick {
     this.draw();
   }
 
-  _ts(e) { e.preventDefault(); const t = e.changedTouches[0]; this.activeId = t.identifier; this._move(t); }
-  _tm(e) { e.preventDefault(); for (const t of e.changedTouches) { if (t.identifier === this.activeId) this._move(t); } }
+  _ts(e) { if (editMode) return; e.preventDefault(); const t = e.changedTouches[0]; this.activeId = t.identifier; this._move(t); }
+  _tm(e) { if (editMode) return; e.preventDefault(); for (const t of e.changedTouches) { if (t.identifier === this.activeId) this._move(t); } }
   _te(e) { for (const t of e.changedTouches) { if (t.identifier === this.activeId) { this._recenter(); this.activeId = null; } } }
-  _md(e) { this._mouseDown = true; this._move(e); }
-  _mm(e) { if (this._mouseDown) this._move(e); }
+  _md(e) { if (editMode) return; this._mouseDown = true; this._move(e); }
+  _mm(e) { if (editMode) return; if (this._mouseDown) this._move(e); }
   _mu(e) { if (this._mouseDown) { this._mouseDown = false; this._recenter(); } }
 
   _getPos(e) {
