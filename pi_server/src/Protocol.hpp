@@ -18,6 +18,7 @@ namespace RoverCmd {
     constexpr const char* SLEEP   = "sleep";   // low-power mode
     constexpr const char* WAKE    = "wake";    // resume normal mode
     constexpr const char* UPDATE_CHECK = "update_check"; // trigger auto-update service now
+    constexpr const char* DRIVE_TUNE = "drive_tune"; // runtime tuning for Teensy motor curve/ramp
 }
 
 // ---- Outbound status types (Pi → Phone) --------------------
@@ -27,6 +28,7 @@ namespace RoverStatus {
     constexpr const char* OTA_PROG  = "ota_prog";  // progress 0-100
     constexpr const char* POWER     = "power";     // sleep/camera state
     constexpr const char* UPDATE    = "update";    // update-check trigger status
+    constexpr const char* DRIVE_TUNE = "drive_tune"; // drive tuning apply/ack
     constexpr const char* ERROR     = "error";
 }
 

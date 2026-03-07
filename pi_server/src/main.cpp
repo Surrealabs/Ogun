@@ -209,9 +209,50 @@ static void dispatchCommand(const std::string& json,
         return;
     }
 
+    // --- Runtime drive tuning ---
+    if (type == RoverCmd::DRIVE_TUNE) {
+        auto clampf = [](float v, float lo, float hi) {
+            return std::max(lo, std::min(hi, v));
+        };
+        const float maxFwd = clampf(jsonFloat(json, "max_fwd"), 0.0f, 1.0f);
+        const float maxRev = clampf(jsonFloat(json, "max_rev"), 0.0f, 1.0f);
+        const float maxTurn = clampf(jsonFloat(json, "max_turn"), 0.0f, 1.0f);
+        const float throttleExpo = clampf(jsonFloat(json, "throttle_expo"), 0.2f, 4.0f);
+        const float turnExpo = clampf(jsonFloat(json, "turn_expo"), 0.2f, 4.0f);
+        const float accelUp = clampf(jsonFloat(json, "accel_up_per_s"), 0.05f, 20.0f);
+        const float accelDown = clampf(jsonFloat(json, "accel_down_per_s"), 0.05f, 30.0f);
+
+        std::ostringstream fw;
+        fw << "{"
+           << "\"cmd\":\"fw_cfg\"," 
+           << "\"drive_max_fwd\":" << maxFwd << ","
+           << "\"drive_max_rev\":" << maxRev << ","
+           << "\"turn_max\":" << maxTurn << ","
+           << "\"throttle_expo\":" << throttleExpo << ","
+           << "\"turn_expo\":" << turnExpo << ","
+           << "\"accel_up_per_s\":" << accelUp << ","
+           << "\"accel_down_per_s\":" << accelDown
+           << "}";
+        teensy.sendRaw(fw.str());
+
+        std::ostringstream ack;
+        ack << "{\"type\":\"" << RoverStatus::DRIVE_TUNE << "\"," 
+            << "\"ok\":true,"
+            << "\"max_fwd\":" << maxFwd << ","
+            << "\"max_rev\":" << maxRev << ","
+            << "\"max_turn\":" << maxTurn << ","
+            << "\"throttle_expo\":" << throttleExpo << ","
+            << "\"turn_expo\":" << turnExpo << ","
+            << "\"accel_up_per_s\":" << accelUp << ","
+            << "\"accel_down_per_s\":" << accelDown
+            << "}";
+        broadcastAll(ws, webui, ack.str());
+        return;
+    }
+
     {
         std::lock_guard<std::mutex> lk(powerMtx);
-        if (power.sleeping && type != RoverCmd::STATUS && type != RoverCmd::ESTOP) {
+        if (power.sleeping && type != RoverCmd::STATUS && type != RoverCmd::ESTOP && type != RoverCmd::DRIVE_TUNE) {
             // Ignore normal action commands while sleeping.
             return;
         }

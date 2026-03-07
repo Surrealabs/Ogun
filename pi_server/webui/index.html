@@ -267,6 +267,47 @@ canvas.joystick {
   color:var(--warn);
 }
 
+/* ---- Drive tuning dialog ---- */
+#tune-dialog {
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.78);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:145;
+}
+#tune-dialog.hidden { display:none; }
+#tune-box {
+  width:min(94vw, 560px);
+  max-height:88vh;
+  overflow:auto;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:16px;
+}
+.tune-group-title {
+  font-size:11px;
+  color:var(--text-dim);
+  text-transform:uppercase;
+  letter-spacing:1px;
+  margin-top:10px;
+}
+.tune-row {
+  display:grid;
+  grid-template-columns:1fr 82px;
+  gap:10px;
+  align-items:center;
+  margin:8px 0;
+}
+.tune-row input[type="range"] { width:100%; }
+.tune-val {
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+  color:var(--accent);
+}
+
 /* ---- Connection dialog ---- */
 #connect-dialog {
   position:fixed; inset:0; background:rgba(0,0,0,0.8); display:flex; align-items:center;
@@ -329,6 +370,7 @@ canvas.joystick {
   <button class="btn" id="btnControls" title="Hide/show joystick and overlay controls">Controls</button>
   <button class="btn" id="btnEditLayout" title="Move on-screen controls">Edit</button>
   <button class="btn" id="btnKeybinds" title="Configure keyboard mappings">Keybinds</button>
+  <button class="btn" id="btnTune" title="Tune drive curves and acceleration">Tune</button>
   <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
   <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
   <button class="btn" id="btnCheckUpdates" title="Trigger rover update check now">Check Updates</button>
@@ -409,6 +451,32 @@ canvas.joystick {
   <button class="btn" id="btnRestoreSide">Show Side</button>
   <button class="btn" id="btnRestoreControls">Show Controls</button>
   <button class="btn" id="btnExitFocus">Exit Focus</button>
+</div>
+
+<div id="tune-dialog" class="hidden">
+  <div id="tune-box">
+    <h3 style="margin-bottom:8px">Drive Tuning</h3>
+    <div style="font-size:12px;color:var(--text-dim)">Adjust limits and ramp rates, then Apply to send to Teensy immediately.</div>
+
+    <div class="tune-group-title">Maximums</div>
+    <div class="tune-row"><label for="tuneMaxFwd">Forward Max</label><input id="tuneMaxFwd" type="range" min="0" max="1" step="0.01"><span class="tune-val" id="tuneMaxFwdVal">1.00</span></div>
+    <div class="tune-row"><label for="tuneMaxRev">Reverse Max</label><input id="tuneMaxRev" type="range" min="0" max="1" step="0.01"><span class="tune-val" id="tuneMaxRevVal">1.00</span></div>
+    <div class="tune-row"><label for="tuneMaxTurn">Turn Max</label><input id="tuneMaxTurn" type="range" min="0" max="1" step="0.01"><span class="tune-val" id="tuneMaxTurnVal">1.00</span></div>
+
+    <div class="tune-group-title">Curve</div>
+    <div class="tune-row"><label for="tuneThrottleExpo">Throttle Expo</label><input id="tuneThrottleExpo" type="range" min="0.2" max="4" step="0.05"><span class="tune-val" id="tuneThrottleExpoVal">1.00</span></div>
+    <div class="tune-row"><label for="tuneTurnExpo">Turn Expo</label><input id="tuneTurnExpo" type="range" min="0.2" max="4" step="0.05"><span class="tune-val" id="tuneTurnExpoVal">1.00</span></div>
+
+    <div class="tune-group-title">Acceleration Ramp</div>
+    <div class="tune-row"><label for="tuneAccelUp">Accel Up (/s)</label><input id="tuneAccelUp" type="range" min="0.05" max="20" step="0.05"><span class="tune-val" id="tuneAccelUpVal">3.00</span></div>
+    <div class="tune-row"><label for="tuneAccelDown">Accel Down (/s)</label><input id="tuneAccelDown" type="range" min="0.05" max="30" step="0.05"><span class="tune-val" id="tuneAccelDownVal">5.00</span></div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn" id="btnTuneReset">Reset Safe</button>
+      <button class="btn accent" id="btnTuneApply">Apply</button>
+      <button class="btn" id="btnTuneClose">Close</button>
+    </div>
+  </div>
 </div>
 
 <div id="keybind-dialog" class="hidden">
@@ -497,6 +565,85 @@ const defaultKeybinds = {
 };
 let keybinds = { ...defaultKeybinds };
 let capturingAction = null;
+const driveTuneDefault = {
+  max_fwd: 0.60,
+  max_rev: 0.45,
+  max_turn: 0.50,
+  throttle_expo: 1.40,
+  turn_expo: 1.55,
+  accel_up_per_s: 1.20,
+  accel_down_per_s: 2.20
+};
+let driveTune = { ...driveTuneDefault };
+
+function tuneClamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function tuneNormalize(raw) {
+  const src = raw || {};
+  return {
+    max_fwd: tuneClamp(Number(src.max_fwd ?? driveTune.max_fwd), 0, 1),
+    max_rev: tuneClamp(Number(src.max_rev ?? driveTune.max_rev), 0, 1),
+    max_turn: tuneClamp(Number(src.max_turn ?? driveTune.max_turn), 0, 1),
+    throttle_expo: tuneClamp(Number(src.throttle_expo ?? driveTune.throttle_expo), 0.2, 4),
+    turn_expo: tuneClamp(Number(src.turn_expo ?? driveTune.turn_expo), 0.2, 4),
+    accel_up_per_s: tuneClamp(Number(src.accel_up_per_s ?? driveTune.accel_up_per_s), 0.05, 20),
+    accel_down_per_s: tuneClamp(Number(src.accel_down_per_s ?? driveTune.accel_down_per_s), 0.05, 30)
+  };
+}
+
+function bindTuneSlider(inputId, valueId, digits = 2) {
+  const input = $(inputId);
+  const value = $(valueId);
+  if (!input || !value) return;
+  const render = () => {
+    value.textContent = Number(input.value).toFixed(digits);
+  };
+  input.addEventListener('input', render);
+  render();
+}
+
+function applyTuneToInputs(tune) {
+  $('tuneMaxFwd').value = tune.max_fwd;
+  $('tuneMaxRev').value = tune.max_rev;
+  $('tuneMaxTurn').value = tune.max_turn;
+  $('tuneThrottleExpo').value = tune.throttle_expo;
+  $('tuneTurnExpo').value = tune.turn_expo;
+  $('tuneAccelUp').value = tune.accel_up_per_s;
+  $('tuneAccelDown').value = tune.accel_down_per_s;
+  ['tuneMaxFwd','tuneMaxRev','tuneMaxTurn','tuneThrottleExpo','tuneTurnExpo','tuneAccelUp','tuneAccelDown'].forEach(id => {
+    const el = $(id);
+    if (el) el.dispatchEvent(new Event('input'));
+  });
+}
+
+function collectTuneFromInputs() {
+  return tuneNormalize({
+    max_fwd: $('tuneMaxFwd').value,
+    max_rev: $('tuneMaxRev').value,
+    max_turn: $('tuneMaxTurn').value,
+    throttle_expo: $('tuneThrottleExpo').value,
+    turn_expo: $('tuneTurnExpo').value,
+    accel_up_per_s: $('tuneAccelUp').value,
+    accel_down_per_s: $('tuneAccelDown').value
+  });
+}
+
+function openTuneDialog() {
+  applyTuneToInputs(driveTune);
+  $('tune-dialog').classList.remove('hidden');
+}
+
+function closeTuneDialog() {
+  $('tune-dialog').classList.add('hidden');
+}
+
+function applyTune() {
+  driveTune = collectTuneFromInputs();
+  sendJson({ type: 'drive_tune', ...driveTune });
+  addLog(`Drive tune apply fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
+}
 
 // ---- DOM refs ----
 const $ = id => document.getElementById(id);
@@ -806,6 +953,7 @@ function initPanelPrefs() {
   $('btnControls').addEventListener('click', () => setControlsHidden(!appEl.classList.contains('controls-hidden')));
   $('btnEditLayout').addEventListener('click', () => setEditMode(!editMode));
   $('btnKeybinds').addEventListener('click', openKeybinds);
+  $('btnTune').addEventListener('click', openTuneDialog);
   $('btnRestoreTop').addEventListener('click', () => setTopHidden(false));
   $('btnRestoreSide').addEventListener('click', () => setSideHidden(false));
   $('btnRestoreControls').addEventListener('click', () => setControlsHidden(false));
@@ -842,6 +990,21 @@ function initPanelPrefs() {
   $('btnKbClose').addEventListener('click', closeKeybinds);
   $('keybind-dialog').addEventListener('click', e => {
     if (e.target.id === 'keybind-dialog') closeKeybinds();
+  });
+
+  bindTuneSlider('tuneMaxFwd', 'tuneMaxFwdVal', 2);
+  bindTuneSlider('tuneMaxRev', 'tuneMaxRevVal', 2);
+  bindTuneSlider('tuneMaxTurn', 'tuneMaxTurnVal', 2);
+  bindTuneSlider('tuneThrottleExpo', 'tuneThrottleExpoVal', 2);
+  bindTuneSlider('tuneTurnExpo', 'tuneTurnExpoVal', 2);
+  bindTuneSlider('tuneAccelUp', 'tuneAccelUpVal', 2);
+  bindTuneSlider('tuneAccelDown', 'tuneAccelDownVal', 2);
+  applyTuneToInputs(driveTune);
+  $('btnTuneApply').addEventListener('click', applyTune);
+  $('btnTuneReset').addEventListener('click', () => applyTuneToInputs(driveTuneDefault));
+  $('btnTuneClose').addEventListener('click', closeTuneDialog);
+  $('tune-dialog').addEventListener('click', e => {
+    if (e.target.id === 'tune-dialog') closeTuneDialog();
   });
 }
 
@@ -962,6 +1125,10 @@ function handleMessage(raw) {
       const status = msg.status || 'unknown';
       const detail = msg.detail || '';
       addLog(`UPDATE ${status}: ${detail}`.trim());
+    } else if (msg.type === 'drive_tune') {
+      driveTune = tuneNormalize(msg);
+      if (!$('tune-dialog').classList.contains('hidden')) applyTuneToInputs(driveTune);
+      addLog(`Drive tune active fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }
