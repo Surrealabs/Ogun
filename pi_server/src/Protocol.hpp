@@ -17,6 +17,7 @@ namespace RoverCmd {
     constexpr const char* CAMERAS = "cameras"; // enabled (bool)
     constexpr const char* SLEEP   = "sleep";   // low-power mode
     constexpr const char* WAKE    = "wake";    // resume normal mode
+    constexpr const char* UPDATE_CHECK = "update_check"; // trigger auto-update service now
 }
 
 // ---- Outbound status types (Pi → Phone) --------------------
@@ -25,6 +26,7 @@ namespace RoverStatus {
     constexpr const char* GPIO_ACK  = "gpio_ack";
     constexpr const char* OTA_PROG  = "ota_prog";  // progress 0-100
     constexpr const char* POWER     = "power";     // sleep/camera state
+    constexpr const char* UPDATE    = "update";    // update-check trigger status
     constexpr const char* ERROR     = "error";
 }
 

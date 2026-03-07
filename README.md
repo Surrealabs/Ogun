@@ -226,7 +226,7 @@ After updating to a release that includes auto-update files, enable the timer:
 sudo ./ogun autoupdate enable
 ```
 
-Default schedule is every 6 hours (`rover-auto-update.timer`) and updates rover software without flashing Teensy.
+Default schedule is every 1 hour (`rover-auto-update.timer`) and updates rover software without flashing Teensy.
 
 ```bash
 sudo ./ogun autoupdate status

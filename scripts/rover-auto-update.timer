@@ -4,7 +4,7 @@ Documentation=https://github.com/Surrealabs/Ogun
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=6h
+OnUnitActiveSec=1h
 AccuracySec=2min
 Persistent=true
 Unit=rover-auto-update.service

@@ -20,6 +20,7 @@
 #include <map>
 
 static std::atomic<bool> gRunning{true};
+static std::atomic<bool> gUpdateCheckBusy{false};
 
 void sigHandler(int) { gRunning = false; }
 
@@ -81,6 +82,14 @@ static std::string powerStateJson(const PowerState& p) {
        << "\"sleeping\":" << (p.sleeping ? "true" : "false") << ","
        << "\"cameras_on\":" << (p.camerasOn ? "true" : "false")
        << "}";
+    return ss.str();
+}
+
+static std::string updateStateJson(const std::string& status, const std::string& detail) {
+    std::ostringstream ss;
+    ss << "{\"type\":\"" << RoverStatus::UPDATE << "\"," 
+       << "\"status\":\"" << status << "\"," 
+       << "\"detail\":\"" << detail << "\"}";
     return ss.str();
 }
 
@@ -171,6 +180,25 @@ static void dispatchCommand(const std::string& json,
             power.camerasOn = true;
         }
         broadcastAll(ws, webui, powerStateJson(power));
+        return;
+    }
+
+    // --- Manual update check/apply (non-blocking) ---
+    if (type == RoverCmd::UPDATE_CHECK) {
+        if (gUpdateCheckBusy.exchange(true)) {
+            broadcastAll(ws, webui, updateStateJson("busy", "Update check already running"));
+            return;
+        }
+        broadcastAll(ws, webui, updateStateJson("queued", "Starting rover-auto-update.service"));
+        std::thread([&ws, webui]() {
+            int rc = std::system("systemctl start rover-auto-update.service >/dev/null 2>&1");
+            if (rc == 0) {
+                broadcastAll(ws, webui, updateStateJson("started", "Update service started"));
+            } else {
+                broadcastAll(ws, webui, updateStateJson("error", "Failed to start update service"));
+            }
+            gUpdateCheckBusy = false;
+        }).detach();
         return;
     }
 

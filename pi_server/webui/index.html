@@ -210,6 +210,7 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   <button class="btn" id="btnEditLayout" title="Move horn/aux buttons">Edit</button>
   <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
   <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
+  <button class="btn" id="btnCheckUpdates" title="Trigger rover update check now">Check Updates</button>
   <span class="gamepad-icon" id="gamepadIcon" title="Gamepad">&#127918;</span>
   <button class="btn" id="btnLog" onclick="toggleLog()">Log</button>
   <button class="btn accent" id="btnOta">&#11014; FW</button>
@@ -534,6 +535,10 @@ function initPanelPrefs() {
   });
   $('btnCameras').addEventListener('click', () => setCamerasEnabled(!camerasEnabled));
   $('btnSleep').addEventListener('click', () => setRoverSleeping(!roverSleeping));
+  $('btnCheckUpdates').addEventListener('click', () => {
+    sendJson({ type: 'update_check' });
+    addLog('Requested update check');
+  });
 
   updateRestoreButtons();
   updatePowerButtons();
@@ -652,6 +657,10 @@ function handleMessage(raw) {
         roverSleeping = msg.sleeping;
       }
       updatePowerButtons();
+    } else if (msg.type === 'update') {
+      const status = msg.status || 'unknown';
+      const detail = msg.detail || '';
+      addLog(`UPDATE ${status}: ${detail}`.trim());
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }
