@@ -535,6 +535,10 @@ function setMainCamera(which) {
   updatePowerButtons();
 }
 
+function swapMainCamera() {
+  setMainCamera(mainCamera === 'front' ? 'rear' : 'front');
+}
+
 function setCamerasEnabled(enabled, send = true) {
   camerasEnabled = !!enabled;
   updatePowerButtons();
@@ -738,6 +742,13 @@ function installFloatingControls() {
   const layout = loadControlLayout();
   applyControlLayout(layout);
   document.querySelectorAll('[data-layout-key]').forEach(installLayoutDraggable);
+  $('mirror-wrap').addEventListener('click', ev => {
+    if (editMode) {
+      ev.preventDefault();
+      return;
+    }
+    swapMainCamera();
+  });
   document.addEventListener('fullscreenchange', updateFullscreenButton);
   updateFullscreenButton();
 
