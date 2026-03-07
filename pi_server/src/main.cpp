@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <regex>
 #include <mutex>
+#include <fstream>
 #include <vector>
 #include <cctype>
 #include <cstdio>
