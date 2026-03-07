@@ -66,12 +66,63 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 
 /* ---- Center area (cameras + joysticks) ---- */
 #center { flex:1; display:flex; flex-direction:column; position:relative; }
-#cam-row { display:flex; flex:1; overflow:hidden; }
-.cam-pane { flex:1; position:relative; background:#000; overflow:hidden; }
-.cam-pane img { width:100%; height:100%; object-fit:contain; }
-.cam-label { position:absolute; top:4px; left:8px; font-size:10px; color:var(--text-dim);
-  background:rgba(0,0,0,0.6); padding:2px 6px; border-radius:3px; }
-.cam-divider { width:2px; background:var(--border); }
+#cam-row {
+  position:relative;
+  flex:1;
+  overflow:hidden;
+  background:#000;
+}
+#cam-main {
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  background:#000;
+}
+#cam-main-label {
+  position:absolute;
+  top:8px;
+  left:10px;
+  font-size:11px;
+  color:var(--text-dim);
+  background:rgba(0,0,0,0.62);
+  border:1px solid rgba(255,255,255,0.2);
+  border-radius:4px;
+  padding:3px 8px;
+  z-index:8;
+}
+#mirror-wrap {
+  position:absolute;
+  top:8px;
+  left:50%;
+  transform:translateX(-50%);
+  width:min(26vw, 300px);
+  height:min(15vw, 170px);
+  min-width:180px;
+  min-height:100px;
+  background:#000;
+  border:2px solid rgba(255,255,255,0.32);
+  border-radius:8px;
+  overflow:hidden;
+  z-index:9;
+  cursor:pointer;
+  box-shadow:0 6px 24px rgba(0,0,0,0.55);
+}
+#cam-mirror {
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+#cam-mirror-label {
+  position:absolute;
+  top:4px;
+  left:6px;
+  font-size:10px;
+  color:var(--text);
+  background:rgba(0,0,0,0.62);
+  border:1px solid rgba(255,255,255,0.2);
+  border-radius:4px;
+  padding:2px 6px;
+}
 
 /* ---- Joystick overlay row ---- */
 #joy-row {
@@ -254,6 +305,7 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   <button class="btn" id="btnEditLayout" title="Move horn/aux buttons">Edit</button>
   <button class="btn" id="btnKeybinds" title="Configure keyboard mappings">Keybinds</button>
   <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
+  <button class="btn" id="btnSwapCam" title="Swap front/rear main camera">Front Main</button>
   <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
   <button class="btn" id="btnCheckUpdates" title="Trigger rover update check now">Check Updates</button>
   <span class="gamepad-icon" id="gamepadIcon" title="Gamepad">&#127918;</span>
@@ -298,14 +350,11 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   <!-- Center: cameras + joysticks -->
   <div id="center">
     <div id="cam-row">
-      <div class="cam-pane">
-        <span class="cam-label">CAM 0 (Front)</span>
-        <img id="cam0" alt="Camera 0">
-      </div>
-      <div class="cam-divider"></div>
-      <div class="cam-pane">
-        <span class="cam-label">CAM 1 (Rear)</span>
-        <img id="cam1" alt="Camera 1">
+      <img id="cam-main" alt="Primary camera view">
+      <span id="cam-main-label">MAIN: FRONT</span>
+      <div id="mirror-wrap" title="Click to swap front/rear">
+        <img id="cam-mirror" alt="Mirror camera view">
+        <span id="cam-mirror-label">MIRROR: REAR</span>
       </div>
     </div>
     <div id="joy-row">
@@ -395,6 +444,7 @@ let servedFromRover = false; // true when page is served by the Pi's WebUI serve
 let editMode = false;
 let camerasEnabled = true;
 let roverSleeping = false;
+let mainCamera = 'front';
 
 const LAYOUT_KEY = 'ogun-float-controls-v1';
 const PANEL_KEY = 'ogun-panel-prefs-v1';
@@ -433,9 +483,30 @@ function sendPin(pin, state) {
 
 function updatePowerButtons() {
   $('btnCameras').textContent = camerasEnabled ? 'Cameras On' : 'Cameras Off';
+  $('btnSwapCam').textContent = mainCamera === 'front' ? 'Front Main' : 'Rear Main';
   $('btnSleep').textContent = roverSleeping ? 'Wake' : 'Sleep';
   $('btnSleep').classList.toggle('danger', !roverSleeping);
   $('btnSleep').classList.toggle('accent', roverSleeping);
+}
+
+function updateCameraSources() {
+  const frontUrl = `http://${roverIp}:8081/`;
+  const rearUrl = `http://${roverIp}:8082/`;
+  const mainIsFront = mainCamera === 'front';
+  $('cam-main').src = mainIsFront ? frontUrl : rearUrl;
+  $('cam-mirror').src = mainIsFront ? rearUrl : frontUrl;
+  $('cam-main-label').textContent = mainIsFront ? 'MAIN: FRONT' : 'MAIN: REAR';
+  $('cam-mirror-label').textContent = mainIsFront ? 'MIRROR: REAR' : 'MIRROR: FRONT';
+}
+
+function setMainCamera(which) {
+  mainCamera = (which === 'rear') ? 'rear' : 'front';
+  if (camerasEnabled) updateCameraSources();
+  updatePowerButtons();
+}
+
+function swapMainCamera() {
+  setMainCamera(mainCamera === 'front' ? 'rear' : 'front');
 }
 
 function setCamerasEnabled(enabled, send = true) {
@@ -669,6 +740,8 @@ function initPanelPrefs() {
     setControlsHidden(false);
   });
   $('btnCameras').addEventListener('click', () => setCamerasEnabled(!camerasEnabled));
+  $('btnSwapCam').addEventListener('click', swapMainCamera);
+  $('mirror-wrap').addEventListener('click', swapMainCamera);
   $('btnSleep').addEventListener('click', () => setRoverSleeping(!roverSleeping));
   $('btnCheckUpdates').addEventListener('click', () => {
     sendJson({ type: 'update_check' });
@@ -826,12 +899,11 @@ function handleMessage(raw) {
 // ---- Cameras (MJPEG) ----
 function startCameras() {
   if (!camerasEnabled) return;
-  $('cam0').src = `http://${roverIp}:8081/`;
-  $('cam1').src = `http://${roverIp}:8082/`;
+  updateCameraSources();
 }
 function stopCameras() {
-  $('cam0').src = '';
-  $('cam1').src = '';
+  $('cam-main').src = '';
+  $('cam-mirror').src = '';
 }
 
 // ---- GPIO buttons ----
