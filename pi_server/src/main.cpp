@@ -16,6 +16,9 @@
 #include <cstdlib>
 #include <regex>
 #include <mutex>
+#include <vector>
+#include <cctype>
+#include <cstdio>
 // Simple JSON helpers (no dependency)
 #include <map>
 
@@ -91,6 +94,88 @@ static std::string updateStateJson(const std::string& status, const std::string&
        << "\"status\":\"" << status << "\"," 
        << "\"detail\":\"" << detail << "\"}";
     return ss.str();
+}
+
+static bool saveDriveTuneConfigFile(const std::string& path,
+                                    float maxFwd,
+                                    float maxRev,
+                                    float maxTurn,
+                                    float throttleExpo,
+                                    float turnExpo,
+                                    float accelUp,
+                                    float accelDown,
+                                    std::string* err)
+{
+    auto trim = [](std::string s) {
+        size_t a = s.find_first_not_of(" \t\r\n");
+        size_t b = s.find_last_not_of(" \t\r\n");
+        if (a == std::string::npos) return std::string();
+        return s.substr(a, b - a + 1);
+    };
+    auto fmt = [](float v) {
+        std::ostringstream ss;
+        ss.setf(std::ios::fixed);
+        ss.precision(2);
+        ss << v;
+        return ss.str();
+    };
+    auto keyLine = [&](const std::string& key, float value) {
+        return key + " = " + fmt(value);
+    };
+
+    std::vector<std::pair<std::string, std::string>> entries = {
+        {"teensy_drive_max_fwd", keyLine("teensy_drive_max_fwd", maxFwd)},
+        {"teensy_drive_max_rev", keyLine("teensy_drive_max_rev", maxRev)},
+        {"teensy_turn_max", keyLine("teensy_turn_max", maxTurn)},
+        {"teensy_throttle_expo", keyLine("teensy_throttle_expo", throttleExpo)},
+        {"teensy_turn_expo", keyLine("teensy_turn_expo", turnExpo)},
+        {"teensy_accel_up_per_s", keyLine("teensy_accel_up_per_s", accelUp)},
+        {"teensy_accel_down_per_s", keyLine("teensy_accel_down_per_s", accelDown)}
+    };
+
+    std::vector<std::string> lines;
+    {
+        std::ifstream in(path);
+        std::string line;
+        while (std::getline(in, line)) lines.push_back(line);
+    }
+
+    auto isKeyLine = [&](const std::string& line, const std::string& key) {
+        std::string t = trim(line);
+        if (t.empty() || t[0] == '#') return false;
+        if (t.rfind(key, 0) != 0) return false;
+        if (t.size() == key.size()) return true;
+        char next = t[key.size()];
+        return std::isspace(static_cast<unsigned char>(next)) || next == '=';
+    };
+
+    for (const auto& kv : entries) {
+        bool replaced = false;
+        for (auto& line : lines) {
+            if (isKeyLine(line, kv.first)) {
+                line = kv.second;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) lines.push_back(kv.second);
+    }
+
+    const std::string tmpPath = path + ".tmp";
+    {
+        std::ofstream out(tmpPath, std::ios::trunc);
+        if (!out.is_open()) {
+            if (err) *err = "cannot write temp config";
+            return false;
+        }
+        for (const auto& line : lines) out << line << "\n";
+    }
+    if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
+        if (err) *err = "cannot replace config file";
+        std::remove(tmpPath.c_str());
+        return false;
+    }
+    return true;
 }
 
 // ---- Teensy firmware runtime-config command ----------------
@@ -209,8 +294,9 @@ static void dispatchCommand(const std::string& json,
         return;
     }
 
-    // --- Runtime drive tuning ---
-    if (type == RoverCmd::DRIVE_TUNE) {
+    // --- Runtime drive tuning (optional persist to rover.conf) ---
+    if (type == RoverCmd::DRIVE_TUNE || type == RoverCmd::DRIVE_TUNE_SAVE) {
+        const bool persist = (type == RoverCmd::DRIVE_TUNE_SAVE);
         auto clampf = [](float v, float lo, float hi) {
             return std::max(lo, std::min(hi, v));
         };
@@ -235,9 +321,27 @@ static void dispatchCommand(const std::string& json,
            << "}";
         teensy.sendRaw(fw.str());
 
+        bool saved = false;
+        std::string saveErr;
+        if (persist) {
+            saved = saveDriveTuneConfigFile(
+                "/etc/rover/rover.conf",
+                maxFwd, maxRev, maxTurn, throttleExpo, turnExpo, accelUp, accelDown,
+                &saveErr);
+        }
+
         std::ostringstream ack;
         ack << "{\"type\":\"" << RoverStatus::DRIVE_TUNE << "\"," 
             << "\"ok\":true,"
+            << "\"saved\":" << ((persist && saved) ? "true" : "false") << ","
+            << "\"persist\":" << (persist ? "true" : "false") << ","
+            << "\"detail\":\"";
+        if (persist) {
+            ack << (saved ? "Saved to /etc/rover/rover.conf" : "Save failed: " + saveErr);
+        } else {
+            ack << "Applied runtime tuning";
+        }
+        ack << "\"," 
             << "\"max_fwd\":" << maxFwd << ","
             << "\"max_rev\":" << maxRev << ","
             << "\"max_turn\":" << maxTurn << ","
@@ -252,7 +356,7 @@ static void dispatchCommand(const std::string& json,
 
     {
         std::lock_guard<std::mutex> lk(powerMtx);
-        if (power.sleeping && type != RoverCmd::STATUS && type != RoverCmd::ESTOP && type != RoverCmd::DRIVE_TUNE) {
+        if (power.sleeping && type != RoverCmd::STATUS && type != RoverCmd::ESTOP && type != RoverCmd::DRIVE_TUNE && type != RoverCmd::DRIVE_TUNE_SAVE) {
             // Ignore normal action commands while sleeping.
             return;
         }

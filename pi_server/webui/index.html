@@ -474,6 +474,7 @@ canvas.joystick {
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn" id="btnTuneReset">Reset Safe</button>
       <button class="btn accent" id="btnTuneApply">Apply</button>
+      <button class="btn" id="btnTuneSave">Save Persistent</button>
       <button class="btn" id="btnTuneClose">Close</button>
     </div>
   </div>
@@ -639,10 +640,10 @@ function closeTuneDialog() {
   $('tune-dialog').classList.add('hidden');
 }
 
-function applyTune() {
+function applyTune(persist = false) {
   driveTune = collectTuneFromInputs();
-  sendJson({ type: 'drive_tune', ...driveTune });
-  addLog(`Drive tune apply fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
+  sendJson({ type: persist ? 'drive_tune_save' : 'drive_tune', ...driveTune });
+  addLog(`${persist ? 'Drive tune save' : 'Drive tune apply'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
 }
 
 // ---- DOM refs ----
@@ -1001,6 +1002,7 @@ function initPanelPrefs() {
   bindTuneSlider('tuneAccelDown', 'tuneAccelDownVal', 2);
   applyTuneToInputs(driveTune);
   $('btnTuneApply').addEventListener('click', applyTune);
+  $('btnTuneSave').addEventListener('click', () => applyTune(true));
   $('btnTuneReset').addEventListener('click', () => applyTuneToInputs(driveTuneDefault));
   $('btnTuneClose').addEventListener('click', closeTuneDialog);
   $('tune-dialog').addEventListener('click', e => {
@@ -1128,7 +1130,9 @@ function handleMessage(raw) {
     } else if (msg.type === 'drive_tune') {
       driveTune = tuneNormalize(msg);
       if (!$('tune-dialog').classList.contains('hidden')) applyTuneToInputs(driveTune);
-      addLog(`Drive tune active fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
+      const detail = msg.detail || '';
+      const saved = !!msg.saved;
+      addLog(`Drive tune ${saved ? 'saved' : 'active'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}${detail ? ` (${detail})` : ''}`);
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }
