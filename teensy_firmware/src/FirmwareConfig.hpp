@@ -6,23 +6,23 @@ namespace fwcfg {
 
 // ---- Motor pins (BTS7960) ---------------------------------
 #ifndef ROVER_L_RPWM_PIN
-#define ROVER_L_RPWM_PIN 2
+#define ROVER_L_RPWM_PIN 21
 #endif
 #ifndef ROVER_L_LPWM_PIN
-#define ROVER_L_LPWM_PIN 3
+#define ROVER_L_LPWM_PIN 19
 #endif
 #ifndef ROVER_L_EN_PIN
-#define ROVER_L_EN_PIN 4
+#define ROVER_L_EN_PIN 18
 #endif
 
 #ifndef ROVER_R_RPWM_PIN
-#define ROVER_R_RPWM_PIN 5
+#define ROVER_R_RPWM_PIN 22
 #endif
 #ifndef ROVER_R_LPWM_PIN
-#define ROVER_R_LPWM_PIN 6
+#define ROVER_R_LPWM_PIN 23
 #endif
 #ifndef ROVER_R_EN_PIN
-#define ROVER_R_EN_PIN 7
+#define ROVER_R_EN_PIN 16
 #endif
 
 // ---- Encoder pins ------------------------------------------
@@ -44,10 +44,10 @@ namespace fwcfg {
 #define ROVER_VBAT_ADC_PIN A0
 #endif
 #ifndef ROVER_CURR_ADC_PIN
-#define ROVER_CURR_ADC_PIN A1
+#define ROVER_CURR_ADC_PIN 17
 #endif
 #ifndef ROVER_TEMP_ADC_PIN
-#define ROVER_TEMP_ADC_PIN A2
+#define ROVER_TEMP_ADC_PIN 20
 #endif
 
 // ---- Calibration -------------------------------------------

@@ -14,12 +14,12 @@ struct RoverConfig {
     bool        teensy_push_fw_config = true;
 
     // --- Teensy firmware runtime config (sent over serial on boot) ---
-    int teensy_l_rpwm_pin = 2;
-    int teensy_l_lpwm_pin = 3;
-    int teensy_l_en_pin   = 4;
-    int teensy_r_rpwm_pin = 5;
-    int teensy_r_lpwm_pin = 6;
-    int teensy_r_en_pin   = 7;
+    int teensy_l_rpwm_pin = 21;
+    int teensy_l_lpwm_pin = 19;
+    int teensy_l_en_pin   = 18;
+    int teensy_r_rpwm_pin = 22;
+    int teensy_r_lpwm_pin = 23;
+    int teensy_r_en_pin   = 16;
 
     int teensy_enc_la_pin = 8;
     int teensy_enc_lb_pin = 9;
@@ -27,8 +27,8 @@ struct RoverConfig {
     int teensy_enc_rb_pin = 11;
 
     int teensy_vbat_adc_pin = 14; // A0 on Teensy
-    int teensy_curr_adc_pin = 15; // A1 on Teensy
-    int teensy_temp_adc_pin = 16; // A2 on Teensy
+    int teensy_curr_adc_pin = 17; // primary motor current sense
+    int teensy_temp_adc_pin = 20; // optional secondary analog sense
 
     float teensy_vbat_div_ratio = 4.03f;
     float teensy_curr_zero_mv = 1650.0f;
