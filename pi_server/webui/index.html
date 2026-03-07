@@ -39,6 +39,8 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 /* ---- Main layout ---- */
 #app { display:flex; flex-direction:column; height:100vh; }
 #main { display:flex; flex:1; overflow:hidden; }
+#app.top-hidden #topbar { display:none; }
+#app.side-hidden #sidebar { display:none; }
 
 /* ---- Sidebar ---- */
 #sidebar {
@@ -86,6 +88,64 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   transition: transform 0.1s;
 }
 #estop-btn:active { transform: translateX(-50%) scale(0.9); }
+
+/* ---- Floating controls (editable layout) ---- */
+#floating-controls {
+  position:absolute;
+  inset:0;
+  z-index:18;
+  pointer-events:none;
+}
+.float-btn {
+  position:absolute;
+  transform:translate(-50%, -50%);
+  min-width:84px;
+  padding:8px 10px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:rgba(13,17,23,0.78);
+  color:var(--text);
+  font-weight:600;
+  cursor:pointer;
+  pointer-events:auto;
+  backdrop-filter: blur(3px);
+}
+.float-btn.active {
+  background:rgba(88,166,255,0.92);
+  border-color:var(--accent);
+  color:#fff;
+}
+#floating-controls.edit-mode .float-btn {
+  border-style:dashed;
+  border-color:var(--warn);
+  cursor:grab;
+}
+#floating-controls.edit-mode::after {
+  content:'Edit mode: drag controls, tap Save';
+  position:absolute;
+  top:10px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:12px;
+  color:var(--warn);
+  background:rgba(0,0,0,0.55);
+  border:1px solid var(--warn);
+  border-radius:6px;
+  padding:4px 10px;
+  pointer-events:none;
+}
+
+/* ---- Restore hidden panels ---- */
+#panel-restore {
+  position:fixed;
+  top:8px;
+  left:8px;
+  z-index:120;
+  display:none;
+  gap:6px;
+}
+#panel-restore.show { display:flex; }
+#panel-restore .btn { background:rgba(13,17,23,0.9); }
 
 /* ---- Connection dialog ---- */
 #connect-dialog {
@@ -144,6 +204,12 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   <span class="status-dot" id="statusDot"></span>
   <span class="status-text" id="statusText">Disconnected</span>
   <span class="spacer"></span>
+  <button class="btn" id="btnTopPanel" title="Show/hide top panel">Top</button>
+  <button class="btn" id="btnSidePanel" title="Show/hide side panel">Side</button>
+  <button class="btn" id="btnFocus" title="Hide/show top and side for full camera/control">Focus</button>
+  <button class="btn" id="btnEditLayout" title="Move horn/aux buttons">Edit</button>
+  <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
+  <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
   <span class="gamepad-icon" id="gamepadIcon" title="Gamepad">&#127918;</span>
   <button class="btn" id="btnLog" onclick="toggleLog()">Log</button>
   <button class="btn accent" id="btnOta">&#11014; FW</button>
@@ -165,13 +231,9 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
       <div class="telem-card"><div class="telem-label">Latency</div><div class="telem-value" id="tvLat">--</div></div>
     </div>
 
-    <div class="section-title" style="margin-top:8px">GPIO</div>
-    <div class="gpio-grid">
-      <div class="gpio-btn" data-pin="horn" onclick="gpioToggle(this)">&#128227; Horn</div>
-      <div class="gpio-btn" data-pin="led_fwd" onclick="gpioToggle(this)">&#128161; Fwd</div>
-      <div class="gpio-btn" data-pin="led_rev" onclick="gpioToggle(this)">&#128308; Rev</div>
-      <div class="gpio-btn" data-pin="aux1" onclick="gpioToggle(this)">AUX 1</div>
-      <div class="gpio-btn" data-pin="aux2" onclick="gpioToggle(this)">AUX 2</div>
+    <div class="section-title" style="margin-top:8px">Controls</div>
+    <div style="font-size:11px;color:var(--text-dim)">
+      Use floating Horn/AUX buttons over video. Tap <b>Edit</b> in top bar to move them.
     </div>
 
     <div class="section-title" style="margin-top:8px">Audio</div>
@@ -208,9 +270,24 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
         <canvas class="joystick" id="joyRight" width="320" height="320"></canvas>
       </div>
     </div>
+
+    <div id="floating-controls">
+      <button class="float-btn" data-pin="horn" data-kind="momentary" data-key="horn">&#128227; Horn</button>
+      <button class="float-btn" data-pin="aux1" data-kind="toggle" data-key="aux1">AUX 1</button>
+      <button class="float-btn" data-pin="aux2" data-kind="toggle" data-key="aux2">AUX 2</button>
+      <button class="float-btn" data-pin="led_fwd" data-kind="toggle" data-key="led_fwd">&#128161; Fwd</button>
+      <button class="float-btn" data-pin="led_rev" data-kind="toggle" data-key="led_rev">&#128308; Rev</button>
+    </div>
+
     <button id="estop-btn" onclick="sendEstop()">E-STOP</button>
   </div>
 </div>
+</div>
+
+<div id="panel-restore">
+  <button class="btn" id="btnRestoreTop">Show Top</button>
+  <button class="btn" id="btnRestoreSide">Show Side</button>
+  <button class="btn" id="btnExitFocus">Exit Focus</button>
 </div>
 
 <!-- ---- Connect dialog ---- -->
@@ -252,6 +329,19 @@ let connected = false;
 let lastTelem = {};
 let lastSendTime = 0;
 let servedFromRover = false; // true when page is served by the Pi's WebUI server
+let editMode = false;
+let camerasEnabled = true;
+let roverSleeping = false;
+
+const LAYOUT_KEY = 'ogun-float-controls-v1';
+const PANEL_KEY = 'ogun-panel-prefs-v1';
+const defaultControlLayout = {
+  horn:    { x: 83, y: 70 },
+  aux1:    { x: 16, y: 68 },
+  aux2:    { x: 16, y: 80 },
+  led_fwd: { x: 83, y: 82 },
+  led_rev: { x: 83, y: 94 }
+};
 
 // ---- DOM refs ----
 const $ = id => document.getElementById(id);
@@ -260,6 +350,194 @@ const statusText = $('statusText');
 const connectDialog = $('connect-dialog');
 const ipInput    = $('ipInput');
 const connectErr = $('connectErr');
+const appEl = $('app');
+const floatingControls = $('floating-controls');
+
+function sendPin(pin, state) {
+  sendJson({ type: 'gpio', pin: pin, state: state });
+}
+
+function updatePowerButtons() {
+  $('btnCameras').textContent = camerasEnabled ? 'Cameras On' : 'Cameras Off';
+  $('btnSleep').textContent = roverSleeping ? 'Wake' : 'Sleep';
+  $('btnSleep').classList.toggle('danger', !roverSleeping);
+  $('btnSleep').classList.toggle('accent', roverSleeping);
+}
+
+function setCamerasEnabled(enabled, send = true) {
+  camerasEnabled = !!enabled;
+  updatePowerButtons();
+  if (send) sendJson({ type: 'cameras', enabled: camerasEnabled });
+  if (camerasEnabled) startCameras(); else stopCameras();
+}
+
+function setRoverSleeping(enabled, send = true) {
+  roverSleeping = !!enabled;
+  updatePowerButtons();
+  if (send) sendJson({ type: roverSleeping ? 'sleep' : 'wake' });
+  if (roverSleeping) stopCameras();
+}
+
+function applyControlLayout(layout) {
+  document.querySelectorAll('#floating-controls .float-btn').forEach(btn => {
+    const key = btn.dataset.key;
+    const pos = layout[key] || defaultControlLayout[key];
+    if (!pos) return;
+    btn.style.left = pos.x + '%';
+    btn.style.top = pos.y + '%';
+  });
+}
+
+function loadControlLayout() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return { ...defaultControlLayout };
+    const parsed = JSON.parse(raw);
+    return { ...defaultControlLayout, ...parsed };
+  } catch (_) {
+    return { ...defaultControlLayout };
+  }
+}
+
+function saveControlLayout() {
+  const out = {};
+  document.querySelectorAll('#floating-controls .float-btn').forEach(btn => {
+    const key = btn.dataset.key;
+    const x = parseFloat(btn.style.left);
+    const y = parseFloat(btn.style.top);
+    if (!isNaN(x) && !isNaN(y)) out[key] = { x, y };
+  });
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(out));
+}
+
+function updateRestoreButtons() {
+  const topHidden = appEl.classList.contains('top-hidden');
+  const sideHidden = appEl.classList.contains('side-hidden');
+  const focus = appEl.classList.contains('focus-mode');
+
+  $('panel-restore').classList.toggle('show', topHidden || sideHidden || focus);
+  $('btnRestoreTop').style.display = topHidden ? 'inline-block' : 'none';
+  $('btnRestoreSide').style.display = sideHidden ? 'inline-block' : 'none';
+  $('btnExitFocus').style.display = focus ? 'inline-block' : 'none';
+
+  $('btnTopPanel').textContent = topHidden ? 'Top Off' : 'Top';
+  $('btnSidePanel').textContent = sideHidden ? 'Side Off' : 'Side';
+  $('btnFocus').textContent = focus ? 'Focus On' : 'Focus';
+  $('btnEditLayout').textContent = editMode ? 'Save' : 'Edit';
+}
+
+function savePanelPrefs() {
+  localStorage.setItem(PANEL_KEY, JSON.stringify({
+    topHidden: appEl.classList.contains('top-hidden'),
+    sideHidden: appEl.classList.contains('side-hidden')
+  }));
+}
+
+function setTopHidden(hidden) {
+  appEl.classList.toggle('top-hidden', !!hidden);
+  savePanelPrefs();
+  updateRestoreButtons();
+}
+
+function setSideHidden(hidden) {
+  appEl.classList.toggle('side-hidden', !!hidden);
+  savePanelPrefs();
+  updateRestoreButtons();
+}
+
+function setFocusMode(enabled) {
+  appEl.classList.toggle('focus-mode', !!enabled);
+  if (enabled) {
+    appEl.classList.add('top-hidden');
+    appEl.classList.add('side-hidden');
+  }
+  savePanelPrefs();
+  updateRestoreButtons();
+}
+
+function setEditMode(enabled) {
+  editMode = !!enabled;
+  floatingControls.classList.toggle('edit-mode', editMode);
+  if (!editMode) saveControlLayout();
+  updateRestoreButtons();
+}
+
+function installFloatingControls() {
+  const layout = loadControlLayout();
+  applyControlLayout(layout);
+
+  document.querySelectorAll('#floating-controls .float-btn').forEach(btn => {
+    btn.addEventListener('click', ev => {
+      if (editMode) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      const pin = btn.dataset.pin;
+      const kind = btn.dataset.kind;
+      if (kind === 'momentary') {
+        sendPin(pin, true);
+        btn.classList.add('active');
+        setTimeout(() => btn.classList.remove('active'), 180);
+      } else {
+        const active = btn.classList.toggle('active');
+        sendPin(pin, active);
+      }
+    });
+
+    let dragging = false;
+    btn.addEventListener('pointerdown', ev => {
+      if (!editMode) return;
+      dragging = true;
+      btn.setPointerCapture(ev.pointerId);
+      ev.preventDefault();
+    });
+    btn.addEventListener('pointermove', ev => {
+      if (!dragging || !editMode) return;
+      const rect = floatingControls.getBoundingClientRect();
+      const x = ((ev.clientX - rect.left) / rect.width) * 100;
+      const y = ((ev.clientY - rect.top) / rect.height) * 100;
+      const cx = Math.max(5, Math.min(95, x));
+      const cy = Math.max(8, Math.min(95, y));
+      btn.style.left = cx + '%';
+      btn.style.top = cy + '%';
+      ev.preventDefault();
+    });
+    btn.addEventListener('pointerup', ev => {
+      if (!dragging) return;
+      dragging = false;
+      try { btn.releasePointerCapture(ev.pointerId); } catch (_) {}
+    });
+  });
+}
+
+function initPanelPrefs() {
+  try {
+    const raw = localStorage.getItem(PANEL_KEY);
+    if (raw) {
+      const prefs = JSON.parse(raw);
+      appEl.classList.toggle('top-hidden', !!prefs.topHidden);
+      appEl.classList.toggle('side-hidden', !!prefs.sideHidden);
+    }
+  } catch (_) {}
+
+  $('btnTopPanel').addEventListener('click', () => setTopHidden(!appEl.classList.contains('top-hidden')));
+  $('btnSidePanel').addEventListener('click', () => setSideHidden(!appEl.classList.contains('side-hidden')));
+  $('btnFocus').addEventListener('click', () => setFocusMode(!appEl.classList.contains('focus-mode')));
+  $('btnEditLayout').addEventListener('click', () => setEditMode(!editMode));
+  $('btnRestoreTop').addEventListener('click', () => setTopHidden(false));
+  $('btnRestoreSide').addEventListener('click', () => setSideHidden(false));
+  $('btnExitFocus').addEventListener('click', () => {
+    appEl.classList.remove('focus-mode');
+    setTopHidden(false);
+    setSideHidden(false);
+  });
+  $('btnCameras').addEventListener('click', () => setCamerasEnabled(!camerasEnabled));
+  $('btnSleep').addEventListener('click', () => setRoverSleeping(!roverSleeping));
+
+  updateRestoreButtons();
+  updatePowerButtons();
+}
 
 // ---- Log ----
 function addLog(msg) {
@@ -365,6 +643,15 @@ function handleMessage(raw) {
       $('ota-progress').value = msg.pct;
       $('ota-status').textContent = `${msg.pct}% — ${msg.msg}`;
       if (msg.pct === 100 || msg.pct === 0) $('btnFlash').disabled = false;
+    } else if (msg.type === 'power') {
+      if (typeof msg.cameras_on === 'boolean') {
+        camerasEnabled = msg.cameras_on;
+        if (camerasEnabled) startCameras(); else stopCameras();
+      }
+      if (typeof msg.sleeping === 'boolean') {
+        roverSleeping = msg.sleeping;
+      }
+      updatePowerButtons();
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }
@@ -375,6 +662,7 @@ function handleMessage(raw) {
 
 // ---- Cameras (MJPEG) ----
 function startCameras() {
+  if (!camerasEnabled) return;
   $('cam0').src = `http://${roverIp}:8081/`;
   $('cam1').src = `http://${roverIp}:8082/`;
 }
@@ -633,6 +921,10 @@ document.addEventListener('visibilitychange', () => {
     addLog('Tab hidden — E-STOP sent');
   }
 });
+
+// ---- UI setup ----
+installFloatingControls();
+initPanelPrefs();
 </script>
 </body>
 </html>
