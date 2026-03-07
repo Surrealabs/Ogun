@@ -36,6 +36,15 @@ struct RuntimeConfig {
     };
     uint32_t watchdogMs{fwcfg::WATCHDOG_MS};
     uint32_t telemIntervalMs{fwcfg::TELEM_INTERVAL_MS};
+    MotorTuning motorTuning{
+        fwcfg::DRIVE_MAX_FWD,
+        fwcfg::DRIVE_MAX_REV,
+        fwcfg::TURN_MAX,
+        fwcfg::THROTTLE_EXPO,
+        fwcfg::TURN_EXPO,
+        fwcfg::ACCEL_UP_PER_S,
+        fwcfg::ACCEL_DOWN_PER_S
+    };
 };
 
 static RuntimeConfig gCfg;
@@ -81,11 +90,17 @@ static uint8_t toPin(int v, uint8_t fallback) {
     return (uint8_t)v;
 }
 
+static float clampFloat(float v, float lo, float hi) {
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
+}
+
 static void applyRuntimeConfig(const RuntimeConfig& cfg) {
     if (motors) motors->stop();
 
     gCfg = cfg;
-    motors = std::make_unique<MotorController>(gCfg.left, gCfg.right);
+    motors = std::make_unique<MotorController>(gCfg.left, gCfg.right, gCfg.motorTuning);
     sensors = std::make_unique<SensorHub>(
         gCfg.encLA, gCfg.encLB, gCfg.encRA, gCfg.encRB, gCfg.sensor);
 
@@ -102,13 +117,19 @@ static void emitConfig() {
         "\"enc_la\":%u,\"enc_lb\":%u,\"enc_ra\":%u,\"enc_rb\":%u,"
         "\"vbat_adc\":%u,\"curr_adc\":%u,\"temp_adc\":%u,"
         "\"vbat_div\":%.3f,\"curr_zero_mv\":%.1f,\"curr_sens_mv_per_a\":%.1f,"
-        "\"watchdog_ms\":%lu,\"telem_ms\":%lu}",
+        "\"watchdog_ms\":%lu,\"telem_ms\":%lu,"
+        "\"drive_max_fwd\":%.3f,\"drive_max_rev\":%.3f,\"turn_max\":%.3f,"
+        "\"throttle_expo\":%.3f,\"turn_expo\":%.3f,"
+        "\"accel_up_per_s\":%.3f,\"accel_down_per_s\":%.3f}",
         gCfg.left.rpwm, gCfg.left.lpwm, gCfg.left.en,
         gCfg.right.rpwm, gCfg.right.lpwm, gCfg.right.en,
         gCfg.encLA, gCfg.encLB, gCfg.encRA, gCfg.encRB,
         gCfg.sensor.vbatAdcPin, gCfg.sensor.currAdcPin, gCfg.sensor.tempAdcPin,
         gCfg.sensor.vbatDivRatio, gCfg.sensor.currZeroMv, gCfg.sensor.currSensMvPerA,
-        (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs);
+        (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs,
+        gCfg.motorTuning.maxForward, gCfg.motorTuning.maxReverse, gCfg.motorTuning.maxTurn,
+        gCfg.motorTuning.throttleExpo, gCfg.motorTuning.turnExpo,
+        gCfg.motorTuning.accelUpPerSec, gCfg.motorTuning.accelDownPerSec);
     Serial.println(buf);
 }
 
@@ -168,6 +189,14 @@ void processCommand(const char* line) {
 
         if (jsonTryGetInt(line, "\"watchdog_ms\"", &vi) && vi >= 0) cfg.watchdogMs = (uint32_t)vi;
         if (jsonTryGetInt(line, "\"telem_ms\"", &vi) && vi >= 0) cfg.telemIntervalMs = (uint32_t)vi;
+
+        if (jsonTryGetFloat(line, "\"drive_max_fwd\"", &vf)) cfg.motorTuning.maxForward = clampFloat(vf, 0.0f, 1.0f);
+        if (jsonTryGetFloat(line, "\"drive_max_rev\"", &vf)) cfg.motorTuning.maxReverse = clampFloat(vf, 0.0f, 1.0f);
+        if (jsonTryGetFloat(line, "\"turn_max\"", &vf)) cfg.motorTuning.maxTurn = clampFloat(vf, 0.0f, 1.0f);
+        if (jsonTryGetFloat(line, "\"throttle_expo\"", &vf)) cfg.motorTuning.throttleExpo = clampFloat(vf, 0.2f, 4.0f);
+        if (jsonTryGetFloat(line, "\"turn_expo\"", &vf)) cfg.motorTuning.turnExpo = clampFloat(vf, 0.2f, 4.0f);
+        if (jsonTryGetFloat(line, "\"accel_up_per_s\"", &vf)) cfg.motorTuning.accelUpPerSec = clampFloat(vf, 0.05f, 20.0f);
+        if (jsonTryGetFloat(line, "\"accel_down_per_s\"", &vf)) cfg.motorTuning.accelDownPerSec = clampFloat(vf, 0.05f, 30.0f);
 
         applyRuntimeConfig(cfg);
         emitConfig();

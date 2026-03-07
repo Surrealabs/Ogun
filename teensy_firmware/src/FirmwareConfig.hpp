@@ -69,6 +69,29 @@ namespace fwcfg {
 #define ROVER_TELEM_INTERVAL_MS 100
 #endif
 
+// ---- Drive behavior tuning ----------------------------------
+#ifndef ROVER_DRIVE_MAX_FWD
+#define ROVER_DRIVE_MAX_FWD 1.0f
+#endif
+#ifndef ROVER_DRIVE_MAX_REV
+#define ROVER_DRIVE_MAX_REV 1.0f
+#endif
+#ifndef ROVER_TURN_MAX
+#define ROVER_TURN_MAX 1.0f
+#endif
+#ifndef ROVER_THROTTLE_EXPO
+#define ROVER_THROTTLE_EXPO 1.0f
+#endif
+#ifndef ROVER_TURN_EXPO
+#define ROVER_TURN_EXPO 1.0f
+#endif
+#ifndef ROVER_ACCEL_UP_PER_S
+#define ROVER_ACCEL_UP_PER_S 3.0f
+#endif
+#ifndef ROVER_ACCEL_DOWN_PER_S
+#define ROVER_ACCEL_DOWN_PER_S 5.0f
+#endif
+
 constexpr uint8_t L_RPWM = ROVER_L_RPWM_PIN;
 constexpr uint8_t L_LPWM = ROVER_L_LPWM_PIN;
 constexpr uint8_t L_EN   = ROVER_L_EN_PIN;
@@ -92,5 +115,13 @@ constexpr float CURR_SENS_MV_PER_A  = ROVER_CURR_SENS_MV_PER_A;
 
 constexpr uint32_t WATCHDOG_MS       = ROVER_WATCHDOG_MS;
 constexpr uint32_t TELEM_INTERVAL_MS = ROVER_TELEM_INTERVAL_MS;
+
+constexpr float DRIVE_MAX_FWD   = ROVER_DRIVE_MAX_FWD;
+constexpr float DRIVE_MAX_REV   = ROVER_DRIVE_MAX_REV;
+constexpr float TURN_MAX        = ROVER_TURN_MAX;
+constexpr float THROTTLE_EXPO   = ROVER_THROTTLE_EXPO;
+constexpr float TURN_EXPO       = ROVER_TURN_EXPO;
+constexpr float ACCEL_UP_PER_S  = ROVER_ACCEL_UP_PER_S;
+constexpr float ACCEL_DOWN_PER_S = ROVER_ACCEL_DOWN_PER_S;
 
 } // namespace fwcfg

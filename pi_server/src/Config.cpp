@@ -42,6 +42,13 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "teensy_vbat_div_ratio") cfg.teensy_vbat_div_ratio = std::stof(val);
         else if (key == "teensy_curr_zero_mv") cfg.teensy_curr_zero_mv = std::stof(val);
         else if (key == "teensy_curr_sens_mv_per_a") cfg.teensy_curr_sens_mv_per_a = std::stof(val);
+        else if (key == "teensy_drive_max_fwd") cfg.teensy_drive_max_fwd = std::stof(val);
+        else if (key == "teensy_drive_max_rev") cfg.teensy_drive_max_rev = std::stof(val);
+        else if (key == "teensy_turn_max") cfg.teensy_turn_max = std::stof(val);
+        else if (key == "teensy_throttle_expo") cfg.teensy_throttle_expo = std::stof(val);
+        else if (key == "teensy_turn_expo") cfg.teensy_turn_expo = std::stof(val);
+        else if (key == "teensy_accel_up_per_s") cfg.teensy_accel_up_per_s = std::stof(val);
+        else if (key == "teensy_accel_down_per_s") cfg.teensy_accel_down_per_s = std::stof(val);
         else if (key == "teensy_watchdog_ms") cfg.teensy_watchdog_ms = std::stoi(val);
         else if (key == "teensy_telem_interval_ms") cfg.teensy_telem_interval_ms = std::stoi(val);
         else if (key == "ble_name")    cfg.ble_name = val;

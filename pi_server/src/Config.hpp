@@ -34,6 +34,15 @@ struct RoverConfig {
     float teensy_curr_zero_mv = 1650.0f;
     float teensy_curr_sens_mv_per_a = 66.0f;
 
+    // Teensy drive behavior tuning (applied in firmware)
+    float teensy_drive_max_fwd = 1.0f;
+    float teensy_drive_max_rev = 1.0f;
+    float teensy_turn_max = 1.0f;
+    float teensy_throttle_expo = 1.0f;
+    float teensy_turn_expo = 1.0f;
+    float teensy_accel_up_per_s = 3.0f;
+    float teensy_accel_down_per_s = 5.0f;
+
     int teensy_watchdog_ms = 500;
     int teensy_telem_interval_ms = 100;
 

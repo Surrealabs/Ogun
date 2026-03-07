@@ -14,6 +14,16 @@
 // ============================================================
 #include <Arduino.h>
 
+struct MotorTuning {
+    float maxForward = 1.0f;     // 0..1
+    float maxReverse = 1.0f;     // 0..1
+    float maxTurn    = 1.0f;     // 0..1
+    float throttleExpo = 1.0f;   // >= 0.2 (1.0 = linear)
+    float turnExpo     = 1.0f;   // >= 0.2 (1.0 = linear)
+    float accelUpPerSec   = 3.0f; // normalized speed/s
+    float accelDownPerSec = 5.0f; // normalized speed/s
+};
+
 struct MotorPins {
     uint8_t rpwm;   // forward PWM pin
     uint8_t lpwm;   // reverse PWM pin
@@ -22,8 +32,8 @@ struct MotorPins {
 
 class MotorController {
 public:
-    MotorController(const MotorPins& left, const MotorPins& right)
-        : left_(left), right_(right) {}
+    MotorController(const MotorPins& left, const MotorPins& right, const MotorTuning& tuning = MotorTuning())
+        : left_(left), right_(right), tuning_(tuning) {}
 
     void begin() {
         pinMode(left_.rpwm, OUTPUT);
@@ -42,12 +52,44 @@ public:
     void setRight(float speed) { setMotor(right_, speed); }
 
     void drive(float leftSpeed, float rightSpeed) {
-        setLeft(leftSpeed);
-        setRight(rightSpeed);
+        const uint32_t now = millis();
+        float dt = (lastUpdateMs_ == 0) ? 0.033f : (float)(now - lastUpdateMs_) / 1000.0f;
+        if (dt < 0.001f) dt = 0.001f;
+        if (dt > 0.25f) dt = 0.25f;
+        lastUpdateMs_ = now;
+
+        // Reconstruct throttle/turn so we can cap and shape each axis independently.
+        float throttle = (leftSpeed + rightSpeed) * 0.5f;
+        float turn = (leftSpeed - rightSpeed) * 0.5f;
+
+        throttle = constrain(throttle, -1.0f, 1.0f);
+        turn = constrain(turn, -1.0f, 1.0f);
+
+        if (throttle >= 0.0f) {
+            throttle = min(throttle, constrain(tuning_.maxForward, 0.0f, 1.0f));
+        } else {
+            throttle = max(throttle, -constrain(tuning_.maxReverse, 0.0f, 1.0f));
+        }
+        turn = constrain(turn, -constrain(tuning_.maxTurn, 0.0f, 1.0f), constrain(tuning_.maxTurn, 0.0f, 1.0f));
+
+        throttle = applyExpo(throttle, max(0.2f, tuning_.throttleExpo));
+        turn = applyExpo(turn, max(0.2f, tuning_.turnExpo));
+
+        const float targetL = constrain(throttle + turn, -1.0f, 1.0f);
+        const float targetR = constrain(throttle - turn, -1.0f, 1.0f);
+
+        outLeft_ = slew(outLeft_, targetL, dt);
+        outRight_ = slew(outRight_, targetR, dt);
+
+        setLeft(outLeft_);
+        setRight(outRight_);
     }
 
     void stop() {
+        outLeft_ = 0.0f;
+        outRight_ = 0.0f;
         drive(0.f, 0.f);
+        lastUpdateMs_ = millis();
     }
 
     void enable(bool en) {
@@ -56,6 +98,23 @@ public:
     }
 
 private:
+    static float applyExpo(float v, float expo) {
+        const float sign = (v < 0.0f) ? -1.0f : 1.0f;
+        return sign * powf(fabsf(v), expo);
+    }
+
+    float slew(float current, float target, float dt) const {
+        const float delta = target - current;
+        const float curMag = fabsf(current);
+        const float tgtMag = fabsf(target);
+        const bool accelerating = tgtMag > curMag;
+        const float rate = accelerating ? max(0.05f, tuning_.accelUpPerSec)
+                                        : max(0.05f, tuning_.accelDownPerSec);
+        const float maxStep = rate * dt;
+        if (fabsf(delta) <= maxStep) return target;
+        return current + ((delta > 0.0f) ? maxStep : -maxStep);
+    }
+
     void setMotor(const MotorPins& m, float speed) {
         speed = constrain(speed, -1.f, 1.f);
         uint8_t pwm = (uint8_t)(fabsf(speed) * 255.f);
@@ -69,4 +128,8 @@ private:
     }
 
     MotorPins left_, right_;
+    MotorTuning tuning_;
+    float outLeft_ = 0.0f;
+    float outRight_ = 0.0f;
+    uint32_t lastUpdateMs_ = 0;
 };

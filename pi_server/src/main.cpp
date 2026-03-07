@@ -114,6 +114,13 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"vbat_div\":" << cfg.teensy_vbat_div_ratio << ","
        << "\"curr_zero_mv\":" << cfg.teensy_curr_zero_mv << ","
        << "\"curr_sens_mv_per_a\":" << cfg.teensy_curr_sens_mv_per_a << ","
+    << "\"drive_max_fwd\":" << cfg.teensy_drive_max_fwd << ","
+    << "\"drive_max_rev\":" << cfg.teensy_drive_max_rev << ","
+    << "\"turn_max\":" << cfg.teensy_turn_max << ","
+    << "\"throttle_expo\":" << cfg.teensy_throttle_expo << ","
+    << "\"turn_expo\":" << cfg.teensy_turn_expo << ","
+    << "\"accel_up_per_s\":" << cfg.teensy_accel_up_per_s << ","
+    << "\"accel_down_per_s\":" << cfg.teensy_accel_down_per_s << ","
        << "\"watchdog_ms\":" << cfg.teensy_watchdog_ms << ","
        << "\"telem_ms\":" << cfg.teensy_telem_interval_ms
        << "}";
