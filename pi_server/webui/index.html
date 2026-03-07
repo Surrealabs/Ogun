@@ -41,6 +41,11 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 #main { display:flex; flex:1; overflow:hidden; }
 #app.top-hidden #topbar { display:none; }
 #app.side-hidden #sidebar { display:none; }
+#app.controls-hidden #joy-row,
+#app.controls-hidden #floating-controls,
+#app.controls-hidden #estop-btn {
+  display:none;
+}
 
 /* ---- Sidebar ---- */
 #sidebar {
@@ -147,6 +152,44 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
 #panel-restore.show { display:flex; }
 #panel-restore .btn { background:rgba(13,17,23,0.9); }
 
+/* ---- Keybind editor ---- */
+#keybind-dialog {
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.78);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:140;
+}
+#keybind-dialog.hidden { display:none; }
+#keybind-box {
+  width:min(92vw, 460px);
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:16px;
+}
+.kb-row {
+  display:grid;
+  grid-template-columns:1fr 120px;
+  gap:8px;
+  margin:6px 0;
+  align-items:center;
+}
+.kb-key {
+  text-align:center;
+  padding:7px 8px;
+  border:1px solid var(--border);
+  border-radius:6px;
+  background:var(--bg);
+  cursor:pointer;
+}
+.kb-key.capture {
+  border-color:var(--warn);
+  color:var(--warn);
+}
+
 /* ---- Connection dialog ---- */
 #connect-dialog {
   position:fixed; inset:0; background:rgba(0,0,0,0.8); display:flex; align-items:center;
@@ -207,7 +250,9 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
   <button class="btn" id="btnTopPanel" title="Show/hide top panel">Top</button>
   <button class="btn" id="btnSidePanel" title="Show/hide side panel">Side</button>
   <button class="btn" id="btnFocus" title="Hide/show top and side for full camera/control">Focus</button>
+  <button class="btn" id="btnControls" title="Hide/show joystick and overlay controls">Controls</button>
   <button class="btn" id="btnEditLayout" title="Move horn/aux buttons">Edit</button>
+  <button class="btn" id="btnKeybinds" title="Configure keyboard mappings">Keybinds</button>
   <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
   <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
   <button class="btn" id="btnCheckUpdates" title="Trigger rover update check now">Check Updates</button>
@@ -288,7 +333,24 @@ canvas.joystick { width:160px; height:160px; cursor:grab; }
 <div id="panel-restore">
   <button class="btn" id="btnRestoreTop">Show Top</button>
   <button class="btn" id="btnRestoreSide">Show Side</button>
+  <button class="btn" id="btnRestoreControls">Show Controls</button>
   <button class="btn" id="btnExitFocus">Exit Focus</button>
+</div>
+
+<div id="keybind-dialog" class="hidden">
+  <div id="keybind-box">
+    <h3 style="margin-bottom:8px">Keyboard Bindings</h3>
+    <div class="kb-row"><span>Forward</span><button class="kb-key" data-action="forward"></button></div>
+    <div class="kb-row"><span>Backward</span><button class="kb-key" data-action="backward"></button></div>
+    <div class="kb-row"><span>Left</span><button class="kb-key" data-action="left"></button></div>
+    <div class="kb-row"><span>Right</span><button class="kb-key" data-action="right"></button></div>
+    <div class="kb-row"><span>E-Stop</span><button class="kb-key" data-action="estop"></button></div>
+    <div class="kb-row"><span>Horn</span><button class="kb-key" data-action="horn"></button></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+      <button class="btn" id="btnKbReset">Reset</button>
+      <button class="btn" id="btnKbClose">Close</button>
+    </div>
+  </div>
 </div>
 
 <!-- ---- Connect dialog ---- -->
@@ -336,6 +398,7 @@ let roverSleeping = false;
 
 const LAYOUT_KEY = 'ogun-float-controls-v1';
 const PANEL_KEY = 'ogun-panel-prefs-v1';
+const KEYBINDS_KEY = 'ogun-keybinds-v1';
 const defaultControlLayout = {
   horn:    { x: 83, y: 70 },
   aux1:    { x: 16, y: 68 },
@@ -343,6 +406,16 @@ const defaultControlLayout = {
   led_fwd: { x: 83, y: 82 },
   led_rev: { x: 83, y: 94 }
 };
+const defaultKeybinds = {
+  forward: 'w',
+  backward: 's',
+  left: 'a',
+  right: 'd',
+  estop: ' ',
+  horn: 'h'
+};
+let keybinds = { ...defaultKeybinds };
+let capturingAction = null;
 
 // ---- DOM refs ----
 const $ = id => document.getElementById(id);
@@ -414,23 +487,27 @@ function saveControlLayout() {
 function updateRestoreButtons() {
   const topHidden = appEl.classList.contains('top-hidden');
   const sideHidden = appEl.classList.contains('side-hidden');
+  const controlsHidden = appEl.classList.contains('controls-hidden');
   const focus = appEl.classList.contains('focus-mode');
 
-  $('panel-restore').classList.toggle('show', topHidden || sideHidden || focus);
+  $('panel-restore').classList.toggle('show', topHidden || sideHidden || controlsHidden || focus);
   $('btnRestoreTop').style.display = topHidden ? 'inline-block' : 'none';
   $('btnRestoreSide').style.display = sideHidden ? 'inline-block' : 'none';
+  $('btnRestoreControls').style.display = controlsHidden ? 'inline-block' : 'none';
   $('btnExitFocus').style.display = focus ? 'inline-block' : 'none';
 
   $('btnTopPanel').textContent = topHidden ? 'Top Off' : 'Top';
   $('btnSidePanel').textContent = sideHidden ? 'Side Off' : 'Side';
   $('btnFocus').textContent = focus ? 'Focus On' : 'Focus';
+  $('btnControls').textContent = controlsHidden ? 'Controls Off' : 'Controls';
   $('btnEditLayout').textContent = editMode ? 'Save' : 'Edit';
 }
 
 function savePanelPrefs() {
   localStorage.setItem(PANEL_KEY, JSON.stringify({
     topHidden: appEl.classList.contains('top-hidden'),
-    sideHidden: appEl.classList.contains('side-hidden')
+    sideHidden: appEl.classList.contains('side-hidden'),
+    controlsHidden: appEl.classList.contains('controls-hidden')
   }));
 }
 
@@ -451,9 +528,62 @@ function setFocusMode(enabled) {
   if (enabled) {
     appEl.classList.add('top-hidden');
     appEl.classList.add('side-hidden');
+    appEl.classList.add('controls-hidden');
   }
   savePanelPrefs();
   updateRestoreButtons();
+}
+
+function setControlsHidden(hidden) {
+  appEl.classList.toggle('controls-hidden', !!hidden);
+  savePanelPrefs();
+  updateRestoreButtons();
+}
+
+function loadKeybinds() {
+  try {
+    const raw = localStorage.getItem(KEYBINDS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    keybinds = { ...defaultKeybinds, ...parsed };
+  } catch (_) {
+    keybinds = { ...defaultKeybinds };
+  }
+}
+
+function saveKeybinds() {
+  localStorage.setItem(KEYBINDS_KEY, JSON.stringify(keybinds));
+}
+
+function keyLabel(k) {
+  if (k === ' ') return 'Space';
+  return (k || '').toUpperCase();
+}
+
+function renderKeybinds() {
+  document.querySelectorAll('.kb-key[data-action]').forEach(btn => {
+    const action = btn.dataset.action;
+    btn.textContent = keyLabel(keybinds[action]);
+    btn.classList.toggle('capture', capturingAction === action);
+  });
+}
+
+function openKeybinds() {
+  capturingAction = null;
+  renderKeybinds();
+  $('keybind-dialog').classList.remove('hidden');
+}
+
+function closeKeybinds() {
+  capturingAction = null;
+  $('keybind-dialog').classList.add('hidden');
+}
+
+function normalizeKey(k) {
+  if (!k) return '';
+  if (k === 'Spacebar') return ' ';
+  if (k.length === 1) return k.toLowerCase();
+  return k;
 }
 
 function setEditMode(enabled) {
@@ -519,19 +649,24 @@ function initPanelPrefs() {
       const prefs = JSON.parse(raw);
       appEl.classList.toggle('top-hidden', !!prefs.topHidden);
       appEl.classList.toggle('side-hidden', !!prefs.sideHidden);
+      appEl.classList.toggle('controls-hidden', !!prefs.controlsHidden);
     }
   } catch (_) {}
 
   $('btnTopPanel').addEventListener('click', () => setTopHidden(!appEl.classList.contains('top-hidden')));
   $('btnSidePanel').addEventListener('click', () => setSideHidden(!appEl.classList.contains('side-hidden')));
   $('btnFocus').addEventListener('click', () => setFocusMode(!appEl.classList.contains('focus-mode')));
+  $('btnControls').addEventListener('click', () => setControlsHidden(!appEl.classList.contains('controls-hidden')));
   $('btnEditLayout').addEventListener('click', () => setEditMode(!editMode));
+  $('btnKeybinds').addEventListener('click', openKeybinds);
   $('btnRestoreTop').addEventListener('click', () => setTopHidden(false));
   $('btnRestoreSide').addEventListener('click', () => setSideHidden(false));
+  $('btnRestoreControls').addEventListener('click', () => setControlsHidden(false));
   $('btnExitFocus').addEventListener('click', () => {
     appEl.classList.remove('focus-mode');
     setTopHidden(false);
     setSideHidden(false);
+    setControlsHidden(false);
   });
   $('btnCameras').addEventListener('click', () => setCamerasEnabled(!camerasEnabled));
   $('btnSleep').addEventListener('click', () => setRoverSleeping(!roverSleeping));
@@ -542,6 +677,25 @@ function initPanelPrefs() {
 
   updateRestoreButtons();
   updatePowerButtons();
+
+  loadKeybinds();
+  renderKeybinds();
+
+  document.querySelectorAll('.kb-key[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      capturingAction = btn.dataset.action;
+      renderKeybinds();
+    });
+  });
+  $('btnKbReset').addEventListener('click', () => {
+    keybinds = { ...defaultKeybinds };
+    saveKeybinds();
+    renderKeybinds();
+  });
+  $('btnKbClose').addEventListener('click', closeKeybinds);
+  $('keybind-dialog').addEventListener('click', e => {
+    if (e.target.id === 'keybind-dialog') closeKeybinds();
+  });
 }
 
 // ---- Log ----
@@ -851,21 +1005,46 @@ driveInterval = setInterval(() => {
 // ---- Keyboard controls ----
 const keysDown = new Set();
 document.addEventListener('keydown', e => {
+  if (!$('keybind-dialog').classList.contains('hidden') && capturingAction) {
+    e.preventDefault();
+    const nk = normalizeKey(e.key);
+    if (nk) {
+      keybinds[capturingAction] = nk;
+      saveKeybinds();
+      capturingAction = null;
+      renderKeybinds();
+    }
+    return;
+  }
   if (e.target.tagName === 'INPUT') return;
-  keysDown.add(e.key);
+  keysDown.add(normalizeKey(e.key));
   updateKeyDrive();
-  if (e.key === ' ') { e.preventDefault(); sendEstop(); }
+  const estopKey = keybinds.estop || defaultKeybinds.estop;
+  const hornKey = keybinds.horn || defaultKeybinds.horn;
+  if (normalizeKey(e.key) === estopKey) { e.preventDefault(); sendEstop(); }
+  if (normalizeKey(e.key) === hornKey) {
+    e.preventDefault();
+    sendPin('horn', true);
+  }
 });
 document.addEventListener('keyup', e => {
-  keysDown.delete(e.key);
+  keysDown.delete(normalizeKey(e.key));
   updateKeyDrive();
 });
 function updateKeyDrive() {
   let y = 0, r = 0;
-  if (keysDown.has('w') || keysDown.has('ArrowUp'))    y += 1;
-  if (keysDown.has('s') || keysDown.has('ArrowDown'))  y -= 1;
-  if (keysDown.has('a') || keysDown.has('ArrowLeft'))  r -= 0.6;
-  if (keysDown.has('d') || keysDown.has('ArrowRight')) r += 0.6;
+  const pressed = a => {
+    const k = keybinds[a] || defaultKeybinds[a];
+    if (!k) return false;
+    if (k.length === 1) {
+      return Array.from(keysDown).some(v => normalizeKey(v) === k);
+    }
+    return Array.from(keysDown).some(v => v === k);
+  };
+  if (pressed('forward') || keysDown.has('ArrowUp'))    y += 1;
+  if (pressed('backward') || keysDown.has('ArrowDown'))  y -= 1;
+  if (pressed('left') || keysDown.has('ArrowLeft'))      r -= 0.6;
+  if (pressed('right') || keysDown.has('ArrowRight'))    r += 0.6;
   leftY = y; rightX = r;
   sendDrive();
 }
