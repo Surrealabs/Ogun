@@ -30,7 +30,10 @@ fi
 
 VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}"
 if [ -n "$VERSION_TAG" ]; then
-    VERSION_FULL="${VERSION}-${VERSION_TAG}"
+    case "$VERSION_TAG" in
+        .*|-*) VERSION_FULL="${VERSION}${VERSION_TAG}" ;;
+        *)     VERSION_FULL="${VERSION}-${VERSION_TAG}" ;;
+    esac
 else
     VERSION_FULL="${VERSION}"
 fi
