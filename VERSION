@@ -11,6 +11,6 @@
 VERSION_MAJOR=0
 VERSION_MINOR=1
 VERSION_PATCH=6
-VERSION_TAG=
+VERSION_TAG=.5
 
-# Full version string: 0.1.6
+# Full version string: 0.1.6.5
