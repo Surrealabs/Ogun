@@ -486,6 +486,10 @@ canvas.joystick {
     <div class="tune-row"><label for="tuneAccelUp">Accel Up (/s)</label><input id="tuneAccelUp" type="range" min="0.05" max="20" step="0.05"><span class="tune-val" id="tuneAccelUpVal">3.00</span></div>
     <div class="tune-row"><label for="tuneAccelDown">Accel Down (/s)</label><input id="tuneAccelDown" type="range" min="0.05" max="30" step="0.05"><span class="tune-val" id="tuneAccelDownVal">5.00</span></div>
 
+    <div class="tune-group-title">Motor Direction</div>
+    <div class="tune-row"><label for="tuneInvertLeft">Invert Left Motor</label><input id="tuneInvertLeft" type="checkbox"></div>
+    <div class="tune-row"><label for="tuneInvertRight">Invert Right Motor</label><input id="tuneInvertRight" type="checkbox"></div>
+
     <div class="tune-group-title">Camera Roles</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 10px 0">
       <span id="tuneCameraRole" style="font-size:12px;color:var(--text-dim)">Front: :8081  Rear: :8082</span>
@@ -595,7 +599,9 @@ const driveTuneDefault = {
   throttle_expo: 1.40,
   turn_expo: 1.55,
   accel_up_per_s: 1.20,
-  accel_down_per_s: 2.20
+  accel_down_per_s: 2.20,
+  invert_left: false,
+  invert_right: false
 };
 let driveTune = { ...driveTuneDefault };
 let frontCamPort = 8081;
@@ -608,6 +614,16 @@ function tuneClamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+function tuneToBool(v, fallback = false) {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v !== 0;
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase();
+    return t === '1' || t === 'true' || t === 'yes' || t === 'on';
+  }
+  return fallback;
+}
+
 function tuneNormalize(raw) {
   const src = raw || {};
   return {
@@ -617,7 +633,9 @@ function tuneNormalize(raw) {
     throttle_expo: tuneClamp(Number(src.throttle_expo ?? driveTune.throttle_expo), 0.2, 4),
     turn_expo: tuneClamp(Number(src.turn_expo ?? driveTune.turn_expo), 0.2, 4),
     accel_up_per_s: tuneClamp(Number(src.accel_up_per_s ?? driveTune.accel_up_per_s), 0.05, 20),
-    accel_down_per_s: tuneClamp(Number(src.accel_down_per_s ?? driveTune.accel_down_per_s), 0.05, 30)
+    accel_down_per_s: tuneClamp(Number(src.accel_down_per_s ?? driveTune.accel_down_per_s), 0.05, 30),
+    invert_left: tuneToBool(src.invert_left, driveTune.invert_left),
+    invert_right: tuneToBool(src.invert_right, driveTune.invert_right)
   };
 }
 
@@ -640,6 +658,8 @@ function applyTuneToInputs(tune) {
   $('tuneTurnExpo').value = tune.turn_expo;
   $('tuneAccelUp').value = tune.accel_up_per_s;
   $('tuneAccelDown').value = tune.accel_down_per_s;
+  $('tuneInvertLeft').checked = !!tune.invert_left;
+  $('tuneInvertRight').checked = !!tune.invert_right;
   ['tuneMaxFwd','tuneMaxRev','tuneMaxTurn','tuneThrottleExpo','tuneTurnExpo','tuneAccelUp','tuneAccelDown'].forEach(id => {
     const el = $(id);
     if (el) el.dispatchEvent(new Event('input'));
@@ -654,7 +674,9 @@ function collectTuneFromInputs() {
     throttle_expo: $('tuneThrottleExpo').value,
     turn_expo: $('tuneTurnExpo').value,
     accel_up_per_s: $('tuneAccelUp').value,
-    accel_down_per_s: $('tuneAccelDown').value
+    accel_down_per_s: $('tuneAccelDown').value,
+    invert_left: $('tuneInvertLeft').checked,
+    invert_right: $('tuneInvertRight').checked
   });
 }
 
@@ -671,7 +693,7 @@ function closeTuneDialog() {
 function applyTune(persist = false) {
   driveTune = collectTuneFromInputs();
   sendJson({ type: persist ? 'drive_tune_save' : 'drive_tune', ...driveTune });
-  addLog(`${persist ? 'Drive tune save' : 'Drive tune apply'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
+  addLog(`${persist ? 'Drive tune save' : 'Drive tune apply'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}`);
 }
 
 function loadCameraMap() {
@@ -1261,7 +1283,7 @@ function handleMessage(raw) {
       if (!$('tune-dialog').classList.contains('hidden')) applyTuneToInputs(driveTune);
       const detail = msg.detail || '';
       const saved = !!msg.saved;
-      addLog(`Drive tune ${saved ? 'saved' : 'active'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}${detail ? ` (${detail})` : ''}`);
+      addLog(`Drive tune ${saved ? 'saved' : 'active'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}${detail ? ` (${detail})` : ''}`);
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }

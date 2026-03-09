@@ -89,6 +89,8 @@ struct PowerState {
 struct ControlState {
     bool started{false};
     bool estopLatched{false};
+    bool invertLeftMotor{false};
+    bool invertRightMotor{false};
 };
 
 static std::string powerStateJson(const PowerState& p) {
@@ -116,6 +118,8 @@ static bool saveDriveTuneConfigFile(const std::string& path,
                                     float turnExpo,
                                     float accelUp,
                                     float accelDown,
+                                    bool invertLeft,
+                                    bool invertRight,
                                     std::string* err)
 {
     auto trim = [](std::string s) {
@@ -134,6 +138,9 @@ static bool saveDriveTuneConfigFile(const std::string& path,
     auto keyLine = [&](const std::string& key, float value) {
         return key + " = " + fmt(value);
     };
+    auto keyBoolLine = [&](const std::string& key, bool value) {
+        return key + " = " + (value ? "true" : "false");
+    };
 
     std::vector<std::pair<std::string, std::string>> entries = {
         {"teensy_drive_max_fwd", keyLine("teensy_drive_max_fwd", maxFwd)},
@@ -142,7 +149,9 @@ static bool saveDriveTuneConfigFile(const std::string& path,
         {"teensy_throttle_expo", keyLine("teensy_throttle_expo", throttleExpo)},
         {"teensy_turn_expo", keyLine("teensy_turn_expo", turnExpo)},
         {"teensy_accel_up_per_s", keyLine("teensy_accel_up_per_s", accelUp)},
-        {"teensy_accel_down_per_s", keyLine("teensy_accel_down_per_s", accelDown)}
+        {"teensy_accel_down_per_s", keyLine("teensy_accel_down_per_s", accelDown)},
+        {"invert_left_motor", keyBoolLine("invert_left_motor", invertLeft)},
+        {"invert_right_motor", keyBoolLine("invert_right_motor", invertRight)}
     };
 
     std::vector<std::string> lines;
@@ -328,6 +337,25 @@ static void dispatchCommand(const std::string& json,
         const float turnExpo = clampf(jsonFloat(json, "turn_expo"), 0.2f, 4.0f);
         const float accelUp = clampf(jsonFloat(json, "accel_up_per_s"), 0.05f, 20.0f);
         const float accelDown = clampf(jsonFloat(json, "accel_down_per_s"), 0.05f, 30.0f);
+        bool currentInvertLeft = cfg.invert_left_motor;
+        bool currentInvertRight = cfg.invert_right_motor;
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            currentInvertLeft = control.invertLeftMotor;
+            currentInvertRight = control.invertRightMotor;
+        }
+        const bool invertLeft = (json.find("\"invert_left\"") != std::string::npos)
+            ? jsonBool(json, "invert_left")
+            : currentInvertLeft;
+        const bool invertRight = (json.find("\"invert_right\"") != std::string::npos)
+            ? jsonBool(json, "invert_right")
+            : currentInvertRight;
+
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            control.invertLeftMotor = invertLeft;
+            control.invertRightMotor = invertRight;
+        }
 
         std::ostringstream fw;
         fw << "{"
@@ -348,6 +376,7 @@ static void dispatchCommand(const std::string& json,
             saved = saveDriveTuneConfigFile(
                 "/etc/rover/rover.conf",
                 maxFwd, maxRev, maxTurn, throttleExpo, turnExpo, accelUp, accelDown,
+                invertLeft, invertRight,
                 &saveErr);
         }
 
@@ -369,7 +398,9 @@ static void dispatchCommand(const std::string& json,
             << "\"throttle_expo\":" << throttleExpo << ","
             << "\"turn_expo\":" << turnExpo << ","
             << "\"accel_up_per_s\":" << accelUp << ","
-            << "\"accel_down_per_s\":" << accelDown
+            << "\"accel_down_per_s\":" << accelDown << ","
+            << "\"invert_left\":" << (invertLeft ? "true" : "false") << ","
+            << "\"invert_right\":" << (invertRight ? "true" : "false")
             << "}";
         broadcastAll(ws, webui, ack.str());
         return;
@@ -428,12 +459,16 @@ static void dispatchCommand(const std::string& json,
     }
     // --- Drive ---
     if (type == RoverCmd::DRIVE) {
+        bool invertLeft = false;
+        bool invertRight = false;
         {
             std::lock_guard<std::mutex> ck(controlMtx);
             if (!control.started || control.estopLatched) {
                 teensy.sendStop();
                 return;
             }
+            invertLeft = control.invertLeftMotor;
+            invertRight = control.invertRightMotor;
         }
         float x   = jsonFloat(json, "x");   // lateral (unused for tank)
         float y   = jsonFloat(json, "y");   // forward/backward
@@ -458,6 +493,9 @@ static void dispatchCommand(const std::string& json,
         };
         left  = cap(left);
         right = cap(right);
+
+        if (invertLeft) left = -left;
+        if (invertRight) right = -right;
 
         teensy.sendDrive(left, right);
 
@@ -578,6 +616,8 @@ int main(int argc, char* argv[]) {
     std::mutex powerMtx;
     ControlState control;
     std::mutex controlMtx;
+    control.invertLeftMotor = cfg.invert_left_motor;
+    control.invertRightMotor = cfg.invert_right_motor;
 
     // ---- Wire up sensor data → telemetry broadcast --------
     teensy.onSensors([&](const TeensySensors& s) {

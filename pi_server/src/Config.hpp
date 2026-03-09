@@ -42,6 +42,8 @@ struct RoverConfig {
     float teensy_turn_expo = 1.5f;
     float teensy_accel_up_per_s = 1.2f;
     float teensy_accel_down_per_s = 8.0f;
+    bool  invert_left_motor = false;
+    bool  invert_right_motor = false;
 
     int teensy_watchdog_ms = 250;
     int teensy_telem_interval_ms = 100;

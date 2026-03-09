@@ -46,6 +46,8 @@ teensy_turn_expo = 1.55
 # Slew rates in normalized speed/second; lower = slower PWM ramp.
 teensy_accel_up_per_s = 1.20
 teensy_accel_down_per_s = 2.20
+invert_left_motor = false
+invert_right_motor = false
 
 teensy_watchdog_ms = 500
 teensy_telem_interval_ms = 100

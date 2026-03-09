@@ -49,6 +49,8 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "teensy_turn_expo") cfg.teensy_turn_expo = std::stof(val);
         else if (key == "teensy_accel_up_per_s") cfg.teensy_accel_up_per_s = std::stof(val);
         else if (key == "teensy_accel_down_per_s") cfg.teensy_accel_down_per_s = std::stof(val);
+        else if (key == "invert_left_motor") cfg.invert_left_motor = (val == "1" || val == "true" || val == "yes");
+        else if (key == "invert_right_motor") cfg.invert_right_motor = (val == "1" || val == "true" || val == "yes");
         else if (key == "teensy_watchdog_ms") cfg.teensy_watchdog_ms = std::stoi(val);
         else if (key == "teensy_telem_interval_ms") cfg.teensy_telem_interval_ms = std::stoi(val);
         else if (key == "ble_name")    cfg.ble_name = val;
