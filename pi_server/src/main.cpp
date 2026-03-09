@@ -654,6 +654,7 @@ int main(int argc, char* argv[]) {
 
     // ---- Telemetry request loop ---------------------------
     int telPeriodMs = (cfg.telemetry_hz > 0) ? (1000 / cfg.telemetry_hz) : 100;
+    if (telPeriodMs < 20) telPeriodMs = 20;
     std::cout << "[main] All systems running. Press Ctrl+C to stop.\n";
     std::cout << "[main] Web UI:    http://<ip>:" << cfg.webui_port << "\n";
     std::cout << "[main] Cameras:   http://<ip>:" << cfg.cam0_port

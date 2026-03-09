@@ -72,7 +72,7 @@ cam0_port      = 8081
 cam1_port      = 8082
 cam_width      = 640
 cam_height     = 480
-cam_fps        = 30
+cam_fps        = 15
 # JPEG quality 0-100 (higher = better quality but more bandwidth)
 cam_jpeg_quality = 80
 

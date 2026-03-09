@@ -63,7 +63,7 @@ struct RoverConfig {
     uint16_t    cam1_port      = 8082;
     int         cam_width      = 640;
     int         cam_height     = 480;
-    int         cam_fps        = 30;
+    int         cam_fps        = 15;
     int         cam_jpeg_quality = 80;  // 0-100
 
     // --- GPIO (BCM numbering) ---

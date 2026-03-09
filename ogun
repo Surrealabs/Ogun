@@ -55,16 +55,39 @@ need_cmd() {
 
 cmd_build() {
     local target="${1:-all}"
+    shift || true
+
+    local safe_mode=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --safe) safe_mode=true; shift ;;
+            *) die "Unknown flag for build: $1" ;;
+        esac
+    done
+
     case "$target" in
         all)
-            cmd_build pi
+            cmd_build pi --safe
             cmd_build teensy
             ;;
         pi)
             info "Building rover_server..."
             need_cmd cmake "Install: sudo apt install cmake"
             need_cmd ninja "Install: sudo apt install ninja-build"
-            make -C "$ROOT_DIR" pi
+            local jobs_arg=""
+            local arch
+            arch="$(uname -m)"
+            if [ "$safe_mode" = true ] || [[ "$arch" == "aarch64" || "$arch" == "armv7l" ]]; then
+                # On Pi-class ARM targets default to a single build job to avoid OOM.
+                local pi_jobs="${OGUN_PI_JOBS:-1}"
+                jobs_arg="JOBS=${pi_jobs}"
+                info "Using safe Pi build mode (JOBS=${pi_jobs})"
+            fi
+            if [ -n "$jobs_arg" ]; then
+                make -C "$ROOT_DIR" pi "$jobs_arg"
+            else
+                make -C "$ROOT_DIR" pi
+            fi
             ;;
         teensy)
             info "Building Teensy firmware..."
@@ -227,14 +250,22 @@ cmd_deps() {
     if [ "$(id -u)" -ne 0 ]; then
         die "Run as root: sudo ./ogun deps"
     fi
-    "$SCRIPTS_DIR/install.sh"
+    "$ROOT_DIR/pi_server/scripts/install.sh"
 }
 
 # ---------- Update (self-update from GitHub Releases) --------
 
 cmd_update() {
+    local mode="system"
     local flash_teensy=false
     local target_version="latest"
+
+    if [[ $# -gt 0 && "$1" != --* ]]; then
+        case "$1" in
+            system|teensy|all) mode="$1"; shift ;;
+            *) die "Unknown update target: $1 (use: system, teensy, all)" ;;
+        esac
+    fi
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -243,6 +274,10 @@ cmd_update() {
             *)               die "Unknown flag: $1" ;;
         esac
     done
+
+    if [ "$mode" = "teensy" ] || [ "$mode" = "all" ]; then
+        flash_teensy=true
+    fi
 
     if [ "$(id -u)" -ne 0 ]; then
         die "Run as root: sudo ./ogun update [--flash-teensy]"
@@ -303,29 +338,23 @@ cmd_update() {
     local release_tag
     release_tag=$(echo "$release_json" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
     info "Found release: $release_tag"
-    info "Downloading: $tarball_url"
+    info "Streaming extract: $tarball_url"
 
-    # Download to temp
+    # Stream-extract to temp to reduce peak disk and RAM pressure on Pi.
     local tmp_dir
     tmp_dir=$(mktemp -d /tmp/ogun-update.XXXXXX)
-    local tmp_tar="$tmp_dir/ogun-update.tar.gz"
+    local extract_dir="$tmp_dir/extracted"
+    mkdir -p "$extract_dir"
 
     if [ "$fetch_cmd" = "curl" ]; then
-        curl -L --progress-bar -o "$tmp_tar" "$tarball_url"
+        curl -L --progress-bar "$tarball_url" | tar xzf - -C "$extract_dir" --strip-components=1
     else
-        wget --show-progress -O "$tmp_tar" "$tarball_url"
+        wget -qO- "$tarball_url" | tar xzf - -C "$extract_dir" --strip-components=1
     fi
 
-    # Extract and apply
-    info "Extracting..."
-    tar xzf "$tmp_tar" -C "$tmp_dir"
-
-    # Find the extracted directory (could be ogun-X.Y.Z/ or update-package/)
-    local pkg_dir
-    pkg_dir=$(find "$tmp_dir" -maxdepth 1 -type d -name 'ogun-*' -o -name 'update-package' | head -1)
-    if [ -z "$pkg_dir" ] || [ ! -f "$pkg_dir/apply-update.sh" ]; then
-        # Maybe files are directly in a single subdirectory
-        pkg_dir=$(find "$tmp_dir" -maxdepth 2 -name 'apply-update.sh' -exec dirname {} \; | head -1)
+    local pkg_dir="$extract_dir"
+    if [ ! -f "$pkg_dir/apply-update.sh" ]; then
+        pkg_dir=$(find "$extract_dir" -maxdepth 2 -name 'apply-update.sh' -exec dirname {} \; | head -1)
     fi
 
     if [ -z "$pkg_dir" ] || [ ! -f "$pkg_dir/apply-update.sh" ]; then
@@ -344,6 +373,42 @@ cmd_update() {
     # Cleanup
     rm -rf "$tmp_dir"
     ok "Update complete ($release_tag)"
+}
+
+cmd_enable() {
+    local target="${1:-}"
+    case "$target" in
+        autoupdate) cmd_autoupdate enable ;;
+        *) die "Usage: ogun enable autoupdate" ;;
+    esac
+}
+
+cmd_disable() {
+    local target="${1:-}"
+    case "$target" in
+        autoupdate) cmd_autoupdate disable ;;
+        *) die "Usage: ogun disable autoupdate" ;;
+    esac
+}
+
+cmd_check() {
+    local target="${1:-}"
+    shift || true
+    case "$target" in
+        autoupdate) cmd_autoupdate status ;;
+        system) cmd_status "$@" ;;
+        *) die "Usage: ogun check <autoupdate|system> [args]" ;;
+    esac
+}
+
+cmd_log() {
+    local target="${1:-teensy}"
+    shift || true
+    case "$target" in
+        teensy|serial) cmd_monitor serial ;;
+        rover) cmd_monitor rover "$@" ;;
+        *) die "Usage: ogun log <teensy|rover> [pi-ip]" ;;
+    esac
 }
 
 cmd_autoupdate() {
@@ -464,17 +529,21 @@ cmd_help() {
     echo "  sync-sysroot <pi-ip>                  Pull ARM64 libs for cross-compile"
     echo ""
     echo -e "${BOLD}Update (on the Pi):${NC}"
-    echo "  update [--flash-teensy]               Pull latest GitHub Release + apply"
-    echo "  update --version v0.2.0               Pull a specific release"
-    echo "  autoupdate [enable|disable|status|run-now]  Manage scheduled updates"
+    echo "  update [system|teensy|all]            Pull latest GitHub Release + apply"
+    echo "  update system --version v0.2.0        Pull a specific release"
+    echo "  enable autoupdate                     Enable scheduled auto-updates"
+    echo "  disable autoupdate                    Disable scheduled auto-updates"
+    echo "  check autoupdate                      Show auto-update timer/service state"
+    echo "  autoupdate [enable|disable|status|run-now]  Legacy alias"
     echo ""
     echo -e "${BOLD}Release (from desktop):${NC}"
     echo "  release <major|minor|patch>           Bump VERSION, tag, (you push)"
     echo ""
     echo -e "${BOLD}Monitor:${NC}"
-    echo "  monitor serial                        Watch Teensy serial output"
-    echo "  monitor rover <pi-ip>                 Tail rover service logs on Pi"
-    echo "  status <pi-ip>                        Show Pi system + rover status"
+    echo "  log teensy                            Watch Teensy serial output"
+    echo "  log rover <pi-ip>                     Tail rover service logs on Pi"
+    echo "  check system <pi-ip>                  Show Pi system + rover status"
+    echo "  monitor/status                         Legacy aliases"
     echo ""
     echo -e "${BOLD}Setup:${NC}"
     echo "  deps                                  Install Pi build deps (sudo)"
@@ -530,6 +599,10 @@ case "$CMD" in
     package)        cmd_package "$@" ;;
     package-script) cmd_package_script ;;
     update)         cmd_update "$@" ;;
+    enable)         cmd_enable "$@" ;;
+    disable)        cmd_disable "$@" ;;
+    check)          cmd_check "$@" ;;
+    log)            cmd_log "$@" ;;
     autoupdate)     cmd_autoupdate "$@" ;;
     release)        cmd_release "$@" ;;
     monitor)        cmd_monitor "$@" ;;
