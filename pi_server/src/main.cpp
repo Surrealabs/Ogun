@@ -53,7 +53,10 @@ static int jsonInt(const std::string& json, const std::string& key) {
 
 // ---- Build a telemetry JSON from sensors + gpio state ------
 static std::string buildTelemetry(const TeensySensors& s,
-                                  GpioController& gpio) {
+                                             GpioController& gpio,
+                                             bool started,
+                                             bool estopLatched,
+                                             bool precheckOk) {
     std::ostringstream ss;
     ss << "{\"type\":\"telemetry\","
        << "\"enc_l\":"   << s.enc_l   << ","
@@ -61,6 +64,9 @@ static std::string buildTelemetry(const TeensySensors& s,
        << "\"volt\":"    << s.voltage << ","
        << "\"curr\":"    << s.current << ","
        << "\"temp\":"    << s.temp    << ","
+         << "\"started\":" << (started ? "true" : "false") << ","
+         << "\"estop\":" << (estopLatched ? "true" : "false") << ","
+         << "\"precheck_ok\":" << (precheckOk ? "true" : "false") << ","
        << "\"horn\":"    << (gpio.getState(RoverGpio::HORN) ? "true" : "false") << ","
        << "\"led_fwd\":" << (gpio.getState(RoverGpio::LED_FWD) ? "true" : "false")
        << "}";
@@ -78,6 +84,11 @@ static std::string otaProgress(int pct, const std::string& msg) {
 struct PowerState {
     bool camerasOn{true};
     bool sleeping{false};
+};
+
+struct ControlState {
+    bool started{false};
+    bool estopLatched{false};
 };
 
 static std::string powerStateJson(const PowerState& p) {
@@ -230,7 +241,9 @@ static void dispatchCommand(const std::string& json,
                             CameraStream& cam0,
                             CameraStream& cam1,
                             PowerState& power,
-                            std::mutex& powerMtx)
+                            std::mutex& powerMtx,
+                            ControlState& control,
+                            std::mutex& controlMtx)
 {
     std::string type = jsonStr(json, "type");
 
@@ -261,6 +274,11 @@ static void dispatchCommand(const std::string& json,
             power.camerasOn = false;
         }
         teensy.sendStop();
+        teensy.sendRaw("{\"cmd\":\"disarm\"}");
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            control.started = false;
+        }
         gpio.set(RoverGpio::LED_FWD, false);
         gpio.set(RoverGpio::LED_REV, false);
         broadcastAll(ws, webui, powerStateJson(power));
@@ -365,16 +383,58 @@ static void dispatchCommand(const std::string& json,
         }
     }
 
+    // --- Ignition start (explicit arm; default is disarmed) ---
+    if (type == RoverCmd::IGNITION_START) {
+        const bool precheckOk = teensy.isOpen();
+        if (!precheckOk) {
+            broadcastAll(ws, webui, "{\"type\":\"error\",\"msg\":\"Pre-ignition check failed: Teensy offline\"}");
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            if (control.estopLatched) {
+                broadcastAll(ws, webui, "{\"type\":\"error\",\"msg\":\"Clear E-Stop before starting\"}");
+                return;
+            }
+            control.started = true;
+        }
+        teensy.sendRaw("{\"cmd\":\"arm\"}");
+        teensy.sendStop();
+        return;
+    }
+
+    // --- Clear E-STOP latch (stays disarmed until ignition_start) ---
+    if (type == RoverCmd::ESTOP_CLEAR) {
+        teensy.sendRaw("{\"cmd\":\"estop_clear\"}");
+        teensy.sendStop();
+        std::lock_guard<std::mutex> ck(controlMtx);
+        control.estopLatched = false;
+        control.started = false;
+        return;
+    }
+
     // --- ESTOP (highest priority) ---
     if (type == RoverCmd::ESTOP || type == "estop") {
         teensy.sendRaw("{\"cmd\":\"estop\"}");
         teensy.sendStop();
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            control.estopLatched = true;
+            control.started = false;
+        }
         gpio.set(RoverGpio::LED_FWD, false);
         gpio.set(RoverGpio::LED_REV, false);
         return;
     }
     // --- Drive ---
     if (type == RoverCmd::DRIVE) {
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            if (!control.started || control.estopLatched) {
+                teensy.sendStop();
+                return;
+            }
+        }
         float x   = jsonFloat(json, "x");   // lateral (unused for tank)
         float y   = jsonFloat(json, "y");   // forward/backward
         float rot = jsonFloat(json, "rot"); // rotation
@@ -443,6 +503,9 @@ static void dispatchCommand(const std::string& json,
             if (ota.rxChunks() == ota.totalChunks()) {
                 // Stop Teensy before flashing
                 teensy.sendStop();
+                // Ask firmware to reboot into bootloader for self-upgrade.
+                teensy.sendRaw("{\"cmd\":\"bootloader\"}");
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
                 ota.flash([&ws, webui](int pct, const std::string& msg) {
                     std::string j = otaProgress(pct, msg);
                     broadcastAll(ws, webui, j);
@@ -482,10 +545,8 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         teensy.sendRaw(teensyFwConfigCommand(cfg));
         std::cout << "[main] pushed teensy fw config from rover.conf\n";
-        // Arm motors so Teensy allows drive commands
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        teensy.sendRaw("{\"cmd\":\"arm\"}");
-        std::cout << "[main] armed teensy motors\n";
+        teensy.sendRaw("{\"cmd\":\"disarm\"}");
+        std::cout << "[main] drivetrain starts disarmed (explicit ignition required)\n";
     }
 
     // ---- GPIO controller ----------
@@ -512,20 +573,37 @@ int main(int argc, char* argv[]) {
     WebUiServer webui(cfg.webui_port, cfg.webui_dir);
     WebUiServer* webuiPtr = &webui;
 
+    // ---- Shared runtime state ----
+    PowerState power;
+    std::mutex powerMtx;
+    ControlState control;
+    std::mutex controlMtx;
+
     // ---- Wire up sensor data → telemetry broadcast --------
     teensy.onSensors([&](const TeensySensors& s) {
-        std::string json = buildTelemetry(s, gpio);
+        bool sleeping = false;
+        {
+            std::lock_guard<std::mutex> lk(powerMtx);
+            sleeping = power.sleeping;
+        }
+        bool started = false;
+        bool estopLatched = false;
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            started = control.started;
+            estopLatched = control.estopLatched;
+        }
+        const bool precheckOk = teensy.isOpen() && !sleeping;
+        std::string json = buildTelemetry(s, gpio, started, estopLatched, precheckOk);
         broadcastAll(ws, webuiPtr, json);
         webui.setLatestStatus(json);
     });
 
     // ---- Command handler shared by WiFi and WebUI ---
-    PowerState power;
-    std::mutex powerMtx;
 
     auto cmdHandler = [&](const std::string& json) {
         dispatchCommand(json, teensy, gpio, ota, ws, webuiPtr, cfg,
-                        cam0, cam1, power, powerMtx);
+                        cam0, cam1, power, powerMtx, control, controlMtx);
     };
     ws.onMessage(cmdHandler);
     webui.onMessage(cmdHandler);

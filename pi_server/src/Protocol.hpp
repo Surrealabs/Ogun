@@ -9,6 +9,8 @@
 // ---- Inbound command types (Phone → Pi) --------------------
 namespace RoverCmd {
     constexpr const char* DRIVE   = "drive";   // x, y, rot  (-1..1)
+    constexpr const char* IGNITION_START = "ignition_start"; // arm drivetrain
+    constexpr const char* ESTOP_CLEAR = "estop_clear"; // clear estop latch
     constexpr const char* GPIO    = "gpio";    // pin, state (bool)
     constexpr const char* AUDIO   = "audio";   // file, volume
     constexpr const char* OTA     = "ota";     // chunk, total, data (base64)

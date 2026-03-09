@@ -7,6 +7,7 @@
 //    {"cmd":"stop"}
 //    {"cmd":"sensor_req"}
 //    {"cmd":"enc_reset"}
+//    {"cmd":"bootloader"}
 //
 //  Teensy → Pi (on sensor_req or every TELEM_INTERVAL_MS):
 //    {"type":"sensors","enc_l":123,"enc_r":456,
@@ -17,6 +18,8 @@
 #include "MotorController.hpp"
 #include "SensorHub.hpp"
 #include "FirmwareConfig.hpp"
+
+extern "C" void _reboot_Teensyduino_(void);
 
 // ---- Globals -----------------------------------------------
 struct RuntimeConfig {
@@ -230,6 +233,13 @@ void processCommand(const char* line) {
     }
     if (jsonHasKey(line, "\"enc_reset\"")) {
         sensors->resetEncoders();
+        return;
+    }
+    if (jsonHasKey(line, "\"bootloader\"")) {
+        Serial.println("{\"type\":\"bootloader\",\"ok\":true}");
+        Serial.flush();
+        delay(20);
+        _reboot_Teensyduino_();
         return;
     }
     if (jsonHasKey(line, "\"fw_cfg_get\"")) {

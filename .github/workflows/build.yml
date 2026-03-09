@@ -14,7 +14,19 @@ env:
   TEENSY_ENV: teensy40
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run verify checks
+        run: |
+          chmod +x scripts/verify.sh
+          ./scripts/verify.sh
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

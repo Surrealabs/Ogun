@@ -1,7 +1,8 @@
 #pragma once
 // ============================================================
-//  SensorHub — aggregates encoder ticks, voltage, current,
-//  and temperature, and serialises them to JSON for the Pi
+//  SensorHub — bare-bones telemetry for current sensing.
+//  Encoder/voltage/temperature are intentionally disabled for
+//  minimal bring-up and report as 0 in telemetry JSON.
 // ============================================================
 #include <Arduino.h>
 #include <Encoder.h>
@@ -29,25 +30,17 @@ public:
 
     // Call periodically (e.g. every 100 ms) to update readings
     void update() {
-        encLTicks_ = encL_.read();
-        encRTicks_ = encR_.read();
-
-        // Battery voltage
-        float rawV   = (float)analogRead(cfg_.vbatAdcPin) / 4095.f * 3.3f;
-        voltage_     = rawV * cfg_.vbatDivRatio;
+        // Bare-bones mode: disable encoder and VBAT/temperature sensing
+        // until corresponding hardware is wired and validated.
+        encLTicks_ = 0;
+        encRTicks_ = 0;
+        voltage_   = 0.f;
 
         // Current sense (bidirectional)
         float rawC   = (float)analogRead(cfg_.currAdcPin) / 4095.f * 3300.f; // mV
         current_     = (rawC - cfg_.currZeroMv) / cfg_.currSensMvPerA;
 
-        // Temperature (NTC Steinhart-Hart simplified)
-        float rawT   = (float)analogRead(cfg_.tempAdcPin);
-        if (rawT > 10.f) {
-            float R     = 10000.f * (4095.f / rawT - 1.f); // 10 kΩ pull-up
-            float lnR   = logf(R / 10000.f);
-            float T_inv = (1.f/298.15f) + lnR / 3950.f;    // B=3950
-            temp_       = (1.f / T_inv) - 273.15f;
-        }
+        temp_ = 0.f;
     }
 
     // Compose telemetry JSON (no heap allocation)

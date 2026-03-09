@@ -45,10 +45,15 @@ bool TeensyOta::flash(ProgressCb cb) {
     }
     if (cb) cb(10, "Firmware assembled");
 
-    // Build flash command
-    // teensy_loader_cli --mcu=TEENSY40 -w -v firmware.hex
-    std::string cmd = flashCmd_ + " --mcu=" + mmcu_ +
-                      " -w -v \"" + hexPath + "\" 2>&1";
+    // Build flash command. -s enables soft reboot for Teensy 3.x/4.x.
+    std::string cmd;
+    if (flashCmd_.find("teensy_loader_cli") != std::string::npos) {
+        cmd = flashCmd_ + " --mcu=" + mmcu_ +
+              " -w -s -v \"" + hexPath + "\" 2>&1";
+    } else {
+        cmd = flashCmd_ + " --mcu=" + mmcu_ +
+              " -w -v \"" + hexPath + "\" 2>&1";
+    }
     if (cb) cb(20, "Flashing Teensy...");
 
     FILE* pipe = popen(cmd.c_str(), "r");

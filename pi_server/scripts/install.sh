@@ -71,6 +71,13 @@ if ! command -v teensy_loader_cli &>/dev/null; then
     rm -rf "$TLC_TMP"
 fi
 
+if teensy_loader_cli --help 2>&1 | grep -q "-s : Use soft reboot"; then
+    echo "[install] teensy_loader_cli soft reboot mode available (-s)"
+else
+    echo "[install] WARNING: teensy_loader_cli soft reboot mode not detected"
+    echo "          Teensy updates may require manual reset button press"
+fi
+
 # ---- 5. Add Teensy udev rule --------------------------------
 cat > /etc/udev/rules.d/49-teensy.rules << 'EOF'
 ATTRS{idVendor}=="16c0", ATTRS{idProduct}=="0478", ENV{ID_MM_DEVICE_IGNORE}="1"

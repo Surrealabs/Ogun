@@ -43,7 +43,7 @@ html, body { height:100%; overflow:hidden; background: var(--bg); color: var(--t
 #app.side-hidden #sidebar { display:none; }
 #app.controls-hidden #joy-row,
 #app.controls-hidden #floating-controls,
-#app.controls-hidden #estop-btn {
+#app.controls-hidden #ignition-btn {
   display:none;
 }
 #app.layout-edit-mode [data-layout-key] {
@@ -156,20 +156,35 @@ canvas.joystick {
 }
 
 /* ---- E-STOP overlay ---- */
-#estop-btn {
+#ignition-btn {
   position:absolute;
   left:50%;
   top:86%;
   transform:translate(-50%, -50%);
-  width:80px; height:80px; border-radius:50%; background:var(--danger); border:3px solid #fff;
+  width:96px; height:96px; border-radius:50%; border:3px solid #fff;
   color:#fff; font-weight:900; font-size:13px; cursor:pointer; z-index:20;
   display:flex; align-items:center; justify-content:center;
-  background:rgba(248,81,73,0.74);
-  box-shadow: 0 0 20px rgba(248,81,73,0.46);
+  box-shadow: 0 0 20px rgba(0,0,0,0.35);
   backdrop-filter: blur(2px);
-  transition: transform 0.1s;
+  transition: transform 0.1s, opacity 0.15s;
 }
-#estop-btn:active { transform: translate(-50%, -50%) scale(0.92); }
+#ignition-btn:active { transform: translate(-50%, -50%) scale(0.92); }
+#ignition-btn.start {
+  background:rgba(63,185,80,0.78);
+  box-shadow: 0 0 20px rgba(63,185,80,0.46);
+}
+#ignition-btn.ebrake {
+  background:rgba(248,81,73,0.78);
+  box-shadow: 0 0 20px rgba(248,81,73,0.46);
+}
+#ignition-btn.latched {
+  background:rgba(210,153,34,0.82);
+  box-shadow: 0 0 20px rgba(210,153,34,0.46);
+}
+#ignition-btn.disabled {
+  opacity:0.45;
+  cursor:not-allowed;
+}
 
 /* ---- Floating controls (editable layout) ---- */
 #floating-controls {
@@ -351,7 +366,7 @@ canvas.joystick {
   #sidebar { display:none; }
   .joy-container { width:130px; height:130px; }
   canvas.joystick { width:130px; height:130px; }
-  #estop-btn { width:60px; height:60px; font-size:11px; }
+  #ignition-btn { width:72px; height:72px; font-size:11px; }
 }
 </style>
 </head>
@@ -441,7 +456,7 @@ canvas.joystick {
       <button class="float-btn" id="btnFullscreen" data-action="fullscreen" data-layout-key="fullscreen">Fullscreen</button>
     </div>
 
-    <button id="estop-btn" data-layout-key="estop">E-STOP</button>
+    <button id="ignition-btn" data-layout-key="estop">START</button>
   </div>
 </div>
 </div>
@@ -470,6 +485,12 @@ canvas.joystick {
     <div class="tune-group-title">Acceleration Ramp</div>
     <div class="tune-row"><label for="tuneAccelUp">Accel Up (/s)</label><input id="tuneAccelUp" type="range" min="0.05" max="20" step="0.05"><span class="tune-val" id="tuneAccelUpVal">3.00</span></div>
     <div class="tune-row"><label for="tuneAccelDown">Accel Down (/s)</label><input id="tuneAccelDown" type="range" min="0.05" max="30" step="0.05"><span class="tune-val" id="tuneAccelDownVal">5.00</span></div>
+
+    <div class="tune-group-title">Camera Roles</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 10px 0">
+      <span id="tuneCameraRole" style="font-size:12px;color:var(--text-dim)">Front: :8081  Rear: :8082</span>
+      <button class="btn" id="btnTuneSwapCams" type="button">Swap Front/Back</button>
+    </div>
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn" id="btnTuneReset">Reset Safe</button>
@@ -543,6 +564,7 @@ let mainCamera = 'front';
 const LAYOUT_KEY = 'ogun-float-controls-v1';
 const PANEL_KEY = 'ogun-panel-prefs-v1';
 const KEYBINDS_KEY = 'ogun-keybinds-v1';
+const CAMERA_MAP_KEY = 'ogun-camera-map-v1';
 const GRID_SNAP_PERCENT = 2;
 const defaultControlLayout = {
   horn:    { x: 83, y: 70 },
@@ -576,6 +598,11 @@ const driveTuneDefault = {
   accel_down_per_s: 2.20
 };
 let driveTune = { ...driveTuneDefault };
+let frontCamPort = 8081;
+let rearCamPort = 8082;
+let drivetrainStarted = false;
+let estopLatched = false;
+let precheckOk = false;
 
 function tuneClamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -633,6 +660,7 @@ function collectTuneFromInputs() {
 
 function openTuneDialog() {
   applyTuneToInputs(driveTune);
+  updateCameraRoleLabel();
   $('tune-dialog').classList.remove('hidden');
 }
 
@@ -644,6 +672,38 @@ function applyTune(persist = false) {
   driveTune = collectTuneFromInputs();
   sendJson({ type: persist ? 'drive_tune_save' : 'drive_tune', ...driveTune });
   addLog(`${persist ? 'Drive tune save' : 'Drive tune apply'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)}`);
+}
+
+function loadCameraMap() {
+  try {
+    const raw = localStorage.getItem(CAMERA_MAP_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.frontCamPort && parsed.rearCamPort) {
+      frontCamPort = Number(parsed.frontCamPort) || 8081;
+      rearCamPort = Number(parsed.rearCamPort) || 8082;
+    }
+  } catch (_) {}
+}
+
+function saveCameraMap() {
+  localStorage.setItem(CAMERA_MAP_KEY, JSON.stringify({ frontCamPort, rearCamPort }));
+}
+
+function updateCameraRoleLabel() {
+  const el = $('tuneCameraRole');
+  if (!el) return;
+  el.textContent = `Front: :${frontCamPort}  Rear: :${rearCamPort}`;
+}
+
+function swapCameraRoles() {
+  const t = frontCamPort;
+  frontCamPort = rearCamPort;
+  rearCamPort = t;
+  saveCameraMap();
+  updateCameraRoleLabel();
+  if (connected && camerasEnabled) updateCameraSources();
+  addLog(`Camera roles swapped (front=:${frontCamPort}, rear=:${rearCamPort})`);
 }
 
 // ---- DOM refs ----
@@ -667,9 +727,60 @@ function updatePowerButtons() {
   $('btnSleep').classList.toggle('accent', roverSleeping);
 }
 
+function updateIgnitionButton() {
+  const btn = $('ignition-btn');
+  if (!btn) return;
+  btn.classList.remove('start', 'ebrake', 'latched', 'disabled');
+
+  if (estopLatched) {
+    btn.classList.add('latched');
+    btn.textContent = 'CLEAR';
+    btn.title = 'Clear E-Brake latch';
+    return;
+  }
+
+  if (drivetrainStarted) {
+    btn.classList.add('ebrake');
+    btn.textContent = 'E-BRK';
+    btn.title = 'Emergency brake';
+    return;
+  }
+
+  btn.classList.add('start');
+  btn.textContent = 'START';
+  btn.title = precheckOk ? 'Start drivetrain' : 'Pre-ignition checks not passed';
+  if (!precheckOk) btn.classList.add('disabled');
+}
+
+function sendIgnitionStart() {
+  if (!precheckOk) {
+    addLog('Start blocked: pre-ignition checks failed');
+    return;
+  }
+  sendJson({ type: 'ignition_start' });
+  addLog('Ignition start requested');
+}
+
+function clearEstopLatch() {
+  sendJson({ type: 'estop_clear' });
+  addLog('E-Brake clear requested');
+}
+
+function handleIgnitionButtonPress() {
+  if (estopLatched) {
+    clearEstopLatch();
+    return;
+  }
+  if (!drivetrainStarted) {
+    sendIgnitionStart();
+    return;
+  }
+  sendEstop();
+}
+
 function updateCameraSources() {
-  const frontUrl = `http://${roverIp}:8081/`;
-  const rearUrl = `http://${roverIp}:8082/`;
+  const frontUrl = `http://${roverIp}:${frontCamPort}/`;
+  const rearUrl = `http://${roverIp}:${rearCamPort}/`;
   const mainIsFront = mainCamera === 'front';
   $('cam-main').src = mainIsFront ? frontUrl : rearUrl;
   $('cam-mirror').src = mainIsFront ? rearUrl : frontUrl;
@@ -696,7 +807,9 @@ function setCamerasEnabled(enabled, send = true) {
 
 function setRoverSleeping(enabled, send = true) {
   roverSleeping = !!enabled;
+  precheckOk = connected && !roverSleeping;
   updatePowerButtons();
+  updateIgnitionButton();
   if (send) sendJson({ type: roverSleeping ? 'sleep' : 'wake' });
   if (roverSleeping) stopCameras();
 }
@@ -928,12 +1041,12 @@ function installFloatingControls() {
 
   });
 
-  $('estop-btn').addEventListener('click', ev => {
+  $('ignition-btn').addEventListener('click', ev => {
     if (editMode) {
       ev.preventDefault();
       return;
     }
-    sendEstop();
+    handleIgnitionButtonPress();
   });
 }
 
@@ -1001,6 +1114,8 @@ function initPanelPrefs() {
   bindTuneSlider('tuneAccelUp', 'tuneAccelUpVal', 2);
   bindTuneSlider('tuneAccelDown', 'tuneAccelDownVal', 2);
   applyTuneToInputs(driveTune);
+  const swapBtn = $('btnTuneSwapCams');
+  if (swapBtn) swapBtn.addEventListener('click', swapCameraRoles);
   $('btnTuneApply').addEventListener('click', applyTune);
   $('btnTuneSave').addEventListener('click', () => applyTune(true));
   $('btnTuneReset').addEventListener('click', () => applyTuneToInputs(driveTuneDefault));
@@ -1063,19 +1178,27 @@ function doConnect() {
   }
   ws.onopen = () => {
     connected = true;
+    drivetrainStarted = false;
+    estopLatched = false;
+    precheckOk = !roverSleeping;
     connectDialog.classList.add('hidden');
     statusDot.classList.add('connected');
     statusText.textContent = 'Connected (' + roverIp + ')';
     addLog('Connected');
+    updateIgnitionButton();
     startCameras();
   };
   ws.onmessage = (ev) => handleMessage(ev.data);
   ws.onerror = () => { connectErr.textContent = 'Connection error'; };
   ws.onclose = () => {
     connected = false;
+    drivetrainStarted = false;
+    estopLatched = false;
+    precheckOk = false;
     statusDot.classList.remove('connected');
     statusText.textContent = 'Disconnected';
     addLog('Disconnected');
+    updateIgnitionButton();
     stopCameras();
     connectDialog.classList.remove('hidden');
   };
@@ -1106,6 +1229,10 @@ function handleMessage(raw) {
       $('tvTemp').textContent  = (msg.temp || 0).toFixed(0) + '°';
       $('tvEncL').textContent  = msg.enc_l || 0;
       $('tvEncR').textContent  = msg.enc_r || 0;
+      drivetrainStarted = !!msg.started;
+      estopLatched = !!msg.estop;
+      precheckOk = (typeof msg.precheck_ok === 'boolean') ? msg.precheck_ok : (connected && !roverSleeping);
+      updateIgnitionButton();
       // latency estimate (if we sent a status req)
       if (lastSendTime) {
         $('tvLat').textContent = (Date.now() - lastSendTime) + 'ms';
@@ -1123,6 +1250,8 @@ function handleMessage(raw) {
         roverSleeping = msg.sleeping;
       }
       updatePowerButtons();
+      precheckOk = connected && !roverSleeping;
+      updateIgnitionButton();
     } else if (msg.type === 'update') {
       const status = msg.status || 'unknown';
       const detail = msg.detail || '';
@@ -1163,7 +1292,13 @@ function gpioToggle(el) {
 function playAudio(file) { sendJson({ type: 'audio', file: file }); addLog('Audio: ' + file); }
 
 // ---- E-STOP ----
-function sendEstop() { sendJson({ type: 'estop' }); addLog('E-STOP!'); }
+function sendEstop() {
+  sendJson({ type: 'estop' });
+  estopLatched = true;
+  drivetrainStarted = false;
+  updateIgnitionButton();
+  addLog('E-STOP!');
+}
 
 // ---- OTA ----
 $('btnOta').onclick = () => $('ota-dialog').classList.remove('hidden');
@@ -1314,7 +1449,7 @@ function sendDrive() {
 
 // Send drive at fixed interval
 driveInterval = setInterval(() => {
-  if (connected && lastDriveJson) {
+  if (connected && drivetrainStarted && !estopLatched && precheckOk && lastDriveJson) {
     try { ws.send(lastDriveJson); } catch(e) {}
   }
 }, 33); // ~30 Hz
@@ -1430,6 +1565,9 @@ document.addEventListener('visibilitychange', () => {
 // ---- UI setup ----
 installFloatingControls();
 initPanelPrefs();
+loadCameraMap();
+updateCameraRoleLabel();
+updateIgnitionButton();
 </script>
 </body>
 </html>

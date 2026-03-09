@@ -228,7 +228,9 @@ if $FLASH_TEENSY && [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
         if [ -f /etc/rover/rover.conf ]; then
             MMCU=$(grep '^teensy_mmcu' /etc/rover/rover.conf | cut -d= -f2 | tr -d ' ' || echo "TEENSY40")
         fi
-        teensy_loader_cli --mcu="$MMCU" -w -v "$SCRIPT_DIR/teensy_firmware.hex"
+        # -s uses the loader's built-in soft reboot path (Teensy 3.x/4.x)
+        # so we do not depend on a separate teensy_reboot binary.
+        teensy_loader_cli --mcu="$MMCU" -w -s -v "$SCRIPT_DIR/teensy_firmware.hex"
         echo "[update] Teensy flashed successfully"
     else
         echo "[WARN] teensy_loader_cli not found — skipping Teensy flash"
