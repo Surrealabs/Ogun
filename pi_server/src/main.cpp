@@ -549,6 +549,7 @@ static void dispatchCommand(const std::string& json,
 int main(int argc, char* argv[]) {
     std::signal(SIGINT,  sigHandler);
     std::signal(SIGTERM, sigHandler);
+    std::signal(SIGPIPE, SIG_IGN);  // ignore broken pipe (Teensy USB disconnect)
 
     std::string cfgPath = (argc > 1) ? argv[1] : "/etc/rover/rover.conf";
     RoverConfig cfg = loadConfig(cfgPath);
