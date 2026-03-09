@@ -46,7 +46,7 @@ bool TeensyOta::flash(ProgressCb cb) {
     if (cb) cb(10, "Firmware assembled");
 
     // Build flash command
-    // teensy_loader_cli --mcu=TEENSY41 -w -v firmware.hex
+    // teensy_loader_cli --mcu=TEENSY40 -w -v firmware.hex
     std::string cmd = flashCmd_ + " --mcu=" + mmcu_ +
                       " -w -v \"" + hexPath + "\" 2>&1";
     if (cb) cb(20, "Flashing Teensy...");

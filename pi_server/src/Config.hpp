@@ -81,7 +81,7 @@ struct RoverConfig {
     std::string ota_work_dir   = "/tmp/rover_ota";
     // teensy_loader_cli or avrdude path:
     std::string ota_flash_cmd  = "teensy_loader_cli";
-    std::string teensy_mmcu    = "TEENSY41";   // or TEENSY40, TEENSY36 ...
+    std::string teensy_mmcu    = "TEENSY40";   // or TEENSY41, TEENSY36 ...
 
     // --- Web UI ---
     uint16_t    webui_port     = 8080;

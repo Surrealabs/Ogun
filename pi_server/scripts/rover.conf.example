@@ -91,5 +91,5 @@ audio_dir      = /opt/rover/sounds
 # --- Teensy OTA flashing ---
 # Path to teensy_loader_cli (installed by install.sh)
 ota_flash_cmd  = /usr/local/bin/teensy_loader_cli
-# Your Teensy model: TEENSY41, TEENSY40, TEENSY36, TEENSYLC ...
-teensy_mmcu    = TEENSY41
+# Your Teensy model: TEENSY40, TEENSY41, TEENSY36, TEENSYLC ...
+teensy_mmcu    = TEENSY40

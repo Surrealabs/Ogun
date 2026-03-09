@@ -21,7 +21,7 @@
 #    PI_USER     SSH user (default: root)
 #    JOBS        Parallel jobs (default: auto-detect)
 #    BUILD_TYPE  CMake build type (default: MinSizeRel)
-#    TEENSY_ENV  PlatformIO env (default: teensy41)
+#    TEENSY_ENV  PlatformIO env (default: teensy40)
 # ============================================================
 
 SHELL       := /bin/bash
@@ -43,7 +43,7 @@ SYSROOT     := $(PI_DIR)/sysroot-arm64
 PI_USER     ?= root
 PI          ?=
 BUILD_TYPE  ?= MinSizeRel
-TEENSY_ENV  ?= teensy41
+TEENSY_ENV  ?= teensy40
 JOBS        ?= $(shell nproc 2>/dev/null || echo 2)
 
 # Version

@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  TEENSY_ENV: teensy41
+  TEENSY_ENV: teensy40
 
 jobs:
   build:
@@ -154,7 +154,7 @@ jobs:
 
             **Included:**
             - `rover_server` — ARM64 binary for BTT Pi 1.2
-            - `teensy_firmware.hex` — Teensy 4.1 firmware
+            - `teensy_firmware.hex` — Teensy 4.0 firmware
             - WebUI assets, config templates, systemd service
 
             **Install on the Pi:**

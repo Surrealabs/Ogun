@@ -152,8 +152,8 @@ echo "--- Step 2: Build Teensy firmware ---"
 
 TEENSY_HEX=""
 if command -v pio &>/dev/null; then
-    (cd "$TEENSY_DIR" && pio run -e teensy41)
-    TEENSY_HEX="$TEENSY_DIR/.pio/build/teensy41/firmware.hex"
+    (cd "$TEENSY_DIR" && pio run -e teensy40)
+    TEENSY_HEX="$TEENSY_DIR/.pio/build/teensy40/firmware.hex"
     echo "[build] Teensy hex: $(du -h "$TEENSY_HEX" | cut -f1)"
 else
     echo "[WARN] PlatformIO not installed — skipping Teensy build."
@@ -223,10 +223,10 @@ fi
 if $FLASH_TEENSY && [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     echo "[update] Flashing Teensy..."
     if command -v teensy_loader_cli &>/dev/null; then
-        # Read MCU from config or default to TEENSY41
-        MMCU="TEENSY41"
+        # Read MCU from config or default to TEENSY40
+        MMCU="TEENSY40"
         if [ -f /etc/rover/rover.conf ]; then
-            MMCU=$(grep '^teensy_mmcu' /etc/rover/rover.conf | cut -d= -f2 | tr -d ' ' || echo "TEENSY41")
+            MMCU=$(grep '^teensy_mmcu' /etc/rover/rover.conf | cut -d= -f2 | tr -d ' ' || echo "TEENSY40")
         fi
         teensy_loader_cli --mcu="$MMCU" -w -v "$SCRIPT_DIR/teensy_firmware.hex"
         echo "[update] Teensy flashed successfully"

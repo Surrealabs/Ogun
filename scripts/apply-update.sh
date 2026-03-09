@@ -106,7 +106,7 @@ if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     if $FLASH_TEENSY; then
         echo "[update] Flashing Teensy..."
         if command -v teensy_loader_cli &>/dev/null; then
-            MMCU="TEENSY41"
+            MMCU="TEENSY40"
             if [ -f /etc/rover/rover.conf ]; then
                 CFG_MMCU=$(grep '^teensy_mmcu' /etc/rover/rover.conf | cut -d= -f2 | tr -d ' ')
                 [ -n "$CFG_MMCU" ] && MMCU="$CFG_MMCU"
