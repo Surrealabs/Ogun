@@ -14,25 +14,26 @@ struct RoverConfig {
     bool        teensy_push_fw_config = true;
 
     // --- Teensy firmware runtime config (sent over serial on boot) ---
-    int teensy_l_rpwm_pin = 21;
-    int teensy_l_lpwm_pin = 19;
-    int teensy_l_en_pin   = 18;
-    int teensy_r_rpwm_pin = 22;
-    int teensy_r_lpwm_pin = 23;
-    int teensy_r_en_pin   = 16;
+    int teensy_l_rpwm_pin = 10;
+    int teensy_l_lpwm_pin = 11;
+    int teensy_l_en_pin   = 8;
+    int teensy_r_rpwm_pin = 15;
+    int teensy_r_lpwm_pin = 14;
+    int teensy_r_en_pin   = 17;
 
-    int teensy_enc_la_pin = 8;
-    int teensy_enc_lb_pin = 9;
-    int teensy_enc_ra_pin = 10;
-    int teensy_enc_rb_pin = 11;
+    int teensy_enc_la_pin = 2;
+    int teensy_enc_lb_pin = 3;
+    int teensy_enc_ra_pin = 4;
+    int teensy_enc_rb_pin = 5;
 
-    int teensy_vbat_adc_pin = 14; // A0 on Teensy
-    int teensy_curr_adc_pin = 17; // primary motor current sense
-    int teensy_temp_adc_pin = 20; // optional secondary analog sense
+    int teensy_vbat_adc_pin = 14; // A0 on Teensy (not wired)
+    int teensy_curr_l_adc_pin = 19; // left BTS7960 IS → A5
+    int teensy_curr_r_adc_pin = 16; // right BTS7960 IS → A2
+    int teensy_temp_adc_pin = 23; // not wired
 
     float teensy_vbat_div_ratio = 4.03f;
-    float teensy_curr_zero_mv = 1650.0f;
-    float teensy_curr_sens_mv_per_a = 66.0f;
+    float teensy_curr_zero_mv = 0.0f;
+    float teensy_curr_sens_mv_per_a = 8.5f;
 
     // Teensy drive behavior tuning (applied in firmware)
     float teensy_drive_max_fwd = 0.45f;
@@ -66,14 +67,8 @@ struct RoverConfig {
     int         cam_fps        = 15;
     int         cam_jpeg_quality = 80;  // 0-100
 
-    // --- GPIO (BCM numbering) ---
-    std::map<std::string, int> gpio_pins = {
-        {"horn",    17},
-        {"led_fwd", 27},
-        {"led_rev", 22},
-        {"aux1",    23},
-        {"aux2",    24},
-    };
+    // --- GPIO (BCM numbering) — no pins wired yet ---
+    std::map<std::string, int> gpio_pins = {};
 
     // --- Audio ---
     std::string audio_device   = "default";    // ALSA device

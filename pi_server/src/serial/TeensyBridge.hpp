@@ -10,11 +10,12 @@
 #include <termios.h>
 
 struct TeensySensors {
-    float enc_l    = 0.f;   // left encoder ticks
-    float enc_r    = 0.f;   // right encoder ticks
-    float voltage  = 0.f;   // battery voltage (V)
-    float current  = 0.f;   // total current draw (A)
-    float temp     = 0.f;   // board temperature (°C)
+    float enc_l     = 0.f;   // left encoder ticks
+    float enc_r     = 0.f;   // right encoder ticks
+    float voltage   = 0.f;   // battery voltage (V) — not wired
+    float current_l = 0.f;   // left motor current (A)
+    float current_r = 0.f;   // right motor current (A)
+    float temp      = 0.f;   // board temperature — not wired
 };
 
 class TeensyBridge {

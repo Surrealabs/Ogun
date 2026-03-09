@@ -62,13 +62,12 @@ static std::string buildTelemetry(const TeensySensors& s,
        << "\"enc_l\":"   << s.enc_l   << ","
        << "\"enc_r\":"   << s.enc_r   << ","
        << "\"volt\":"    << s.voltage << ","
-       << "\"curr\":"    << s.current << ","
+       << "\"curr_l\":"  << s.current_l << ","
+       << "\"curr_r\":"  << s.current_r << ","
        << "\"temp\":"    << s.temp    << ","
          << "\"started\":" << (started ? "true" : "false") << ","
          << "\"estop\":" << (estopLatched ? "true" : "false") << ","
-         << "\"precheck_ok\":" << (precheckOk ? "true" : "false") << ","
-       << "\"horn\":"    << (gpio.getState(RoverGpio::HORN) ? "true" : "false") << ","
-       << "\"led_fwd\":" << (gpio.getState(RoverGpio::LED_FWD) ? "true" : "false")
+         << "\"precheck_ok\":" << (precheckOk ? "true" : "false")
        << "}";
     return ss.str();
 }
@@ -215,7 +214,8 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"enc_ra\":" << cfg.teensy_enc_ra_pin << ","
        << "\"enc_rb\":" << cfg.teensy_enc_rb_pin << ","
        << "\"vbat_adc\":" << cfg.teensy_vbat_adc_pin << ","
-       << "\"curr_adc\":" << cfg.teensy_curr_adc_pin << ","
+       << "\"curr_l_adc\":" << cfg.teensy_curr_l_adc_pin << ","
+       << "\"curr_r_adc\":" << cfg.teensy_curr_r_adc_pin << ","
        << "\"temp_adc\":" << cfg.teensy_temp_adc_pin << ","
        << "\"vbat_div\":" << cfg.teensy_vbat_div_ratio << ","
        << "\"curr_zero_mv\":" << cfg.teensy_curr_zero_mv << ","
@@ -291,10 +291,6 @@ static void dispatchCommand(const std::string& json,
         gpio.set(RoverGpio::LED_FWD, false);
         gpio.set(RoverGpio::LED_REV, false);
         broadcastAll(ws, webui, powerStateJson(power));
-
-        // Sleep mode requests a clean service recycle so rover + web UI stack
-        // comes back in a known-good state without manual intervention.
-        std::system("sh -c 'sleep 1; systemctl restart rover.service >/dev/null 2>&1 &' ");
         return;
     }
     if (type == RoverCmd::WAKE) {
@@ -502,24 +498,10 @@ static void dispatchCommand(const std::string& json,
         if (invertRight) right = -right;
 
         teensy.sendDrive(left, right);
-
-        // LED direction indicators
-        bool fwd = (y > 0.05f);
-        bool rev = (y < -0.05f);
-        gpio.set(RoverGpio::LED_FWD, fwd);
-        gpio.set(RoverGpio::LED_REV, rev);
         return;
     }
-    // --- GPIO ---
+    // --- GPIO (no pins wired yet — commands accepted but no-op) ---
     if (type == RoverCmd::GPIO) {
-        std::string pin = jsonStr(json, "pin");
-        bool state = jsonBool(json, "state");
-        if (pin == RoverGpio::HORN) {
-            // Pulse horn for 1 second instead of holding
-            gpio.pulse(pin, 1000);
-        } else {
-            gpio.set(pin, state);
-        }
         return;
     }
     // --- Audio ---

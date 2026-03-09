@@ -31,7 +31,8 @@ struct RuntimeConfig {
     uint8_t encRB{fwcfg::ENC_RB};
     SensorConfig sensor{
         fwcfg::VBAT_ADC_PIN,
-        fwcfg::CURR_ADC_PIN,
+        fwcfg::CURR_L_ADC_PIN,
+        fwcfg::CURR_R_ADC_PIN,
         fwcfg::TEMP_ADC_PIN,
         fwcfg::VBAT_DIV_RATIO,
         fwcfg::CURR_ZERO_MV,
@@ -150,7 +151,7 @@ static void emitConfig() {
         "\"l_rpwm\":%u,\"l_lpwm\":%u,\"l_en\":%u,"
         "\"r_rpwm\":%u,\"r_lpwm\":%u,\"r_en\":%u,"
         "\"enc_la\":%u,\"enc_lb\":%u,\"enc_ra\":%u,\"enc_rb\":%u,"
-        "\"vbat_adc\":%u,\"curr_adc\":%u,\"temp_adc\":%u,"
+        "\"vbat_adc\":%u,\"curr_l_adc\":%u,\"curr_r_adc\":%u,\"temp_adc\":%u,"
         "\"vbat_div\":%.3f,\"curr_zero_mv\":%.1f,\"curr_sens_mv_per_a\":%.1f,"
         "\"watchdog_ms\":%lu,\"telem_ms\":%lu,"
         "\"drive_max_fwd\":%.3f,\"drive_max_rev\":%.3f,\"turn_max\":%.3f,"
@@ -163,7 +164,7 @@ static void emitConfig() {
         gCfg.left.rpwm, gCfg.left.lpwm, gCfg.left.en,
         gCfg.right.rpwm, gCfg.right.lpwm, gCfg.right.en,
         gCfg.encLA, gCfg.encLB, gCfg.encRA, gCfg.encRB,
-        gCfg.sensor.vbatAdcPin, gCfg.sensor.currAdcPin, gCfg.sensor.tempAdcPin,
+        gCfg.sensor.vbatAdcPin, gCfg.sensor.currLAdcPin, gCfg.sensor.currRAdcPin, gCfg.sensor.tempAdcPin,
         gCfg.sensor.vbatDivRatio, gCfg.sensor.currZeroMv, gCfg.sensor.currSensMvPerA,
         (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs,
         gCfg.motorTuning.maxForward, gCfg.motorTuning.maxReverse, gCfg.motorTuning.maxTurn,
@@ -264,7 +265,8 @@ void processCommand(const char* line) {
         if (jsonTryGetInt(line, "\"enc_rb\"", &vi)) cfg.encRB = toPin(vi, cfg.encRB);
 
         if (jsonTryGetInt(line, "\"vbat_adc\"", &vi)) cfg.sensor.vbatAdcPin = toPin(vi, cfg.sensor.vbatAdcPin);
-        if (jsonTryGetInt(line, "\"curr_adc\"", &vi)) cfg.sensor.currAdcPin = toPin(vi, cfg.sensor.currAdcPin);
+        if (jsonTryGetInt(line, "\"curr_l_adc\"", &vi)) cfg.sensor.currLAdcPin = toPin(vi, cfg.sensor.currLAdcPin);
+        if (jsonTryGetInt(line, "\"curr_r_adc\"", &vi)) cfg.sensor.currRAdcPin = toPin(vi, cfg.sensor.currRAdcPin);
         if (jsonTryGetInt(line, "\"temp_adc\"", &vi)) cfg.sensor.tempAdcPin = toPin(vi, cfg.sensor.tempAdcPin);
 
         if (jsonTryGetFloat(line, "\"vbat_div\"", &vf)) cfg.sensor.vbatDivRatio = vf;

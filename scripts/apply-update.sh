@@ -124,12 +124,6 @@ if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     fi
 fi
 
-# Save APK for easy phone install
-if [ -f "$SCRIPT_DIR/ogun-controller.apk" ]; then
-    cp "$SCRIPT_DIR/ogun-controller.apk" /opt/rover/
-    echo "[update] Android APK saved to /opt/rover/ogun-controller.apk"
-fi
-
 # Record installed version
 if [ -f "$SCRIPT_DIR/BUILD" ]; then
     cp "$SCRIPT_DIR/BUILD" /opt/rover/INSTALLED_VERSION

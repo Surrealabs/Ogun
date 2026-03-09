@@ -402,9 +402,8 @@ canvas.joystick {
   <div id="sidebar">
     <div class="section-title">Telemetry</div>
     <div class="telem-grid">
-      <div class="telem-card"><div class="telem-label">Voltage</div><div class="telem-value" id="tvVolt">--</div></div>
-      <div class="telem-card"><div class="telem-label">Current</div><div class="telem-value" id="tvCurr">--</div></div>
-      <div class="telem-card"><div class="telem-label">Temp</div><div class="telem-value" id="tvTemp">--</div></div>
+      <div class="telem-card"><div class="telem-label">Curr L</div><div class="telem-value" id="tvCurrL">--</div></div>
+      <div class="telem-card"><div class="telem-label">Curr R</div><div class="telem-value" id="tvCurrR">--</div></div>
       <div class="telem-card"><div class="telem-label">EncL</div><div class="telem-value" id="tvEncL">0</div></div>
       <div class="telem-card"><div class="telem-label">EncR</div><div class="telem-value" id="tvEncR">0</div></div>
       <div class="telem-card"><div class="telem-label">Latency</div><div class="telem-value" id="tvLat">--</div></div>
@@ -412,13 +411,11 @@ canvas.joystick {
 
     <div class="section-title" style="margin-top:8px">Controls</div>
     <div style="font-size:11px;color:var(--text-dim)">
-      Use floating Horn/AUX buttons over video. Tap <b>Edit</b> in top bar to move them.
+      Use floating AUX buttons over video. Tap <b>Edit</b> in top bar to move them.
     </div>
 
     <div class="section-title" style="margin-top:8px">Audio</div>
     <div class="gpio-grid">
-      <div class="gpio-btn" onclick="playAudio('horn.wav')">&#128266; Horn SFX</div>
-      <div class="gpio-btn" onclick="playAudio('siren.wav')">&#128680; Siren</div>
     </div>
 
     <div class="section-title" style="margin-top:8px">Drive</div>
@@ -448,11 +445,8 @@ canvas.joystick {
     </div>
 
     <div id="floating-controls">
-      <button class="float-btn" data-pin="horn" data-kind="momentary" data-layout-key="horn">&#128227; Horn</button>
       <button class="float-btn" data-pin="aux1" data-kind="toggle" data-layout-key="aux1">AUX 1</button>
       <button class="float-btn" data-pin="aux2" data-kind="toggle" data-layout-key="aux2">AUX 2</button>
-      <button class="float-btn" data-pin="led_fwd" data-kind="toggle" data-layout-key="led_fwd">&#128161; Fwd</button>
-      <button class="float-btn" data-pin="led_rev" data-kind="toggle" data-layout-key="led_rev">&#128308; Rev</button>
       <button class="float-btn" id="btnFullscreen" data-action="fullscreen" data-layout-key="fullscreen">Fullscreen</button>
     </div>
 
@@ -513,7 +507,6 @@ canvas.joystick {
     <div class="kb-row"><span>Left</span><button class="kb-key" data-action="left"></button></div>
     <div class="kb-row"><span>Right</span><button class="kb-key" data-action="right"></button></div>
     <div class="kb-row"><span>E-Stop</span><button class="kb-key" data-action="estop"></button></div>
-    <div class="kb-row"><span>Horn</span><button class="kb-key" data-action="horn"></button></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
       <button class="btn" id="btnKbReset">Reset</button>
       <button class="btn" id="btnKbClose">Close</button>
@@ -571,11 +564,8 @@ const KEYBINDS_KEY = 'ogun-keybinds-v1';
 const CAMERA_MAP_KEY = 'ogun-camera-map-v1';
 const GRID_SNAP_PERCENT = 2;
 const defaultControlLayout = {
-  horn:    { x: 83, y: 70 },
   aux1:    { x: 16, y: 68 },
   aux2:    { x: 16, y: 80 },
-  led_fwd: { x: 83, y: 82 },
-  led_rev: { x: 83, y: 94 },
   mirror_wrap: { x: 50, y: 14 },
   joy_left: { x: 16, y: 80 },
   joy_right: { x: 84, y: 80 },
@@ -587,8 +577,7 @@ const defaultKeybinds = {
   backward: 's',
   left: 'a',
   right: 'd',
-  estop: ' ',
-  horn: 'h'
+  estop: ' '
 };
 let keybinds = { ...defaultKeybinds };
 let capturingAction = null;
@@ -1246,9 +1235,8 @@ function handleMessage(raw) {
     const msg = JSON.parse(raw);
     if (msg.type === 'telemetry') {
       lastTelem = msg;
-      $('tvVolt').textContent  = (msg.volt || 0).toFixed(1) + 'V';
-      $('tvCurr').textContent  = (msg.curr || 0).toFixed(2) + 'A';
-      $('tvTemp').textContent  = (msg.temp || 0).toFixed(0) + '°';
+      $('tvCurrL').textContent = (msg.curr_l || 0).toFixed(2) + 'A';
+      $('tvCurrR').textContent = (msg.curr_r || 0).toFixed(2) + 'A';
       $('tvEncL').textContent  = msg.enc_l || 0;
       $('tvEncR').textContent  = msg.enc_r || 0;
       drivetrainStarted = !!msg.started;
@@ -1494,12 +1482,7 @@ document.addEventListener('keydown', e => {
   keysDown.add(normalizeKey(e.key));
   updateKeyDrive();
   const estopKey = keybinds.estop || defaultKeybinds.estop;
-  const hornKey = keybinds.horn || defaultKeybinds.horn;
   if (normalizeKey(e.key) === estopKey) { e.preventDefault(); sendEstop(); }
-  if (normalizeKey(e.key) === hornKey) {
-    e.preventDefault();
-    sendPin('horn', true);
-  }
 });
 document.addEventListener('keyup', e => {
   keysDown.delete(normalizeKey(e.key));
@@ -1544,8 +1527,7 @@ function pollGamepad() {
   rightX = Math.abs(rawR) < deadzone ? 0 : rawR;
   sendDrive();
 
-  // Buttons: A = horn, B = estop, triggers = aux
-  if (gp.buttons[0] && gp.buttons[0].pressed) sendJson({ type: 'gpio', pin: 'horn', state: true });
+  // Buttons: B = estop
   if (gp.buttons[1] && gp.buttons[1].pressed) sendEstop();
 
   requestAnimationFrame(pollGamepad);

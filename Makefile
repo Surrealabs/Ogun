@@ -5,8 +5,6 @@
 #    make all           Build Pi server + Teensy firmware
 #    make pi            Build rover_server (native on Pi)
 #    make teensy        Build Teensy .hex via PlatformIO
-#    make android       Build Android APK (debug)
-#    make android-release  Build Android APK (release)
 #    make package       Create rover-update.tar.gz bundle
 #    make deploy PI=<ip>  Package + deploy to Pi via SSH
 #    make flash-teensy  Flash Teensy via USB (PlatformIO)
@@ -31,7 +29,6 @@ SHELL       := /bin/bash
 ROOT_DIR    := $(shell pwd)
 PI_DIR      := $(ROOT_DIR)/pi_server
 TEENSY_DIR  := $(ROOT_DIR)/teensy_firmware
-ANDROID_DIR := $(ROOT_DIR)/android_app
 SCRIPTS_DIR := $(PI_DIR)/scripts
 
 # Pi server build dirs
@@ -63,9 +60,9 @@ IS_PI       := $(filter aarch64 armv7l,$(ARCH))
 # ============================================================
 #  Phony targets
 # ============================================================
-.PHONY: all pi teensy android android-release package deploy \
+.PHONY: all pi teensy package deploy \
         flash-teensy install cross cross-sync clean clean-pi \
-        clean-teensy clean-android clean-package deps info help
+        clean-teensy clean-package deps info help
 
 # ============================================================
 #  all — build Pi server + Teensy firmware
@@ -158,20 +155,6 @@ flash-teensy: teensy
 	cd $(TEENSY_DIR) && pio run -e $(TEENSY_ENV) --target upload
 
 # ============================================================
-#  Android app
-# ============================================================
-android:
-	@echo "=== Building Android APK (debug) ==="
-	@test -d $(ANDROID_DIR) || { echo "ERROR: android_app/ not found"; exit 1; }
-	cd $(ANDROID_DIR) && ./gradlew assembleDebug
-	@echo "[android] APK: $(ANDROID_DIR)/app/build/outputs/apk/debug/"
-
-android-release:
-	@echo "=== Building Android APK (release) ==="
-	cd $(ANDROID_DIR) && ./gradlew assembleRelease
-	@echo "[android] APK: $(ANDROID_DIR)/app/build/outputs/apk/release/"
-
-# ============================================================
 #  Package — bundle everything into a deployable tarball
 # ============================================================
 package:
@@ -203,12 +186,6 @@ package:
 	@if [ -d $(PI_DIR)/webui ]; then \
 		cp -r $(PI_DIR)/webui $(PACKAGE_DIR)/webui; \
 		echo "[pkg] Including WebUI assets"; \
-	fi
-	@# Android APK (if built)
-	@APK=$$(find $(ANDROID_DIR)/app/build/outputs/apk -name '*.apk' 2>/dev/null | head -1); \
-	if [ -n "$$APK" ]; then \
-		cp "$$APK" $(PACKAGE_DIR)/ogun-controller.apk; \
-		echo "[pkg] Including Android APK"; \
 	fi
 	@# Generate apply script
 	@cp $(ROOT_DIR)/scripts/apply-update.sh $(PACKAGE_DIR)/apply-update.sh
@@ -281,15 +258,11 @@ clean-teensy:
 	@echo "Cleaning Teensy firmware..."
 	@test -d $(TEENSY_DIR) && cd $(TEENSY_DIR) && pio run --target clean 2>/dev/null || rm -rf $(TEENSY_DIR)/.pio
 
-clean-android:
-	@echo "Cleaning Android build..."
-	@test -d $(ANDROID_DIR) && cd $(ANDROID_DIR) && ./gradlew clean 2>/dev/null || true
-
 clean-package:
 	@echo "Cleaning package artifacts..."
 	@rm -rf $(PACKAGE_DIR) $(TARBALL)
 
-clean-all: clean clean-android
+clean-all: clean
 
 # ============================================================
 #  Info / help
@@ -304,14 +277,12 @@ info:
 	@echo ""
 	@echo "  Pi server:  $(PI_DIR)"
 	@echo "  Teensy FW:  $(TEENSY_DIR)"
-	@echo "  Android:    $(ANDROID_DIR)"
 	@echo ""
 	@echo "  Tools:"
 	@printf "    cmake:    " && (cmake --version 2>/dev/null | head -1 || echo "NOT FOUND")
 	@printf "    ninja:    " && (ninja --version 2>/dev/null || echo "NOT FOUND")
 	@printf "    pio:      " && (pio --version 2>/dev/null || echo "NOT FOUND")
 	@printf "    aarch64:  " && (aarch64-linux-gnu-g++ --version 2>/dev/null | head -1 || echo "NOT FOUND (optional, for cross-compile)")
-	@printf "    gradlew:  " && (test -f $(ANDROID_DIR)/gradlew && echo "found" || echo "NOT FOUND (optional)")
 
 help:
 	@echo "Ogun Rover — Build Targets"
@@ -321,8 +292,6 @@ help:
 	@echo "    make pi              Build rover_server (native)"
 	@echo "    make teensy          Build Teensy .hex via PlatformIO"
 	@echo "    make cross           Cross-compile rover_server for ARM64"
-	@echo "    make android         Build Android APK (debug)"
-	@echo "    make android-release Build Android APK (release)"
 	@echo ""
 	@echo "  Flash / Deploy:"
 	@echo "    make flash-teensy    Flash Teensy via USB"
@@ -336,7 +305,7 @@ help:
 	@echo ""
 	@echo "  Clean:"
 	@echo "    make clean           Clean Pi + Teensy + package"
-	@echo "    make clean-all       Clean everything including Android"
+	@echo "    make clean-all       Clean everything"
 	@echo ""
 	@echo "  Info:"
 	@echo "    make info            Show build environment"

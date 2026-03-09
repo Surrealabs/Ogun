@@ -11,6 +11,10 @@ GpioController::GpioController(const std::map<std::string, int>& pinMap,
 GpioController::~GpioController() { shutdown(); }
 
 bool GpioController::init() {
+    if (pinMap_.empty()) {
+        std::cout << "[gpio] no pins configured\n";
+        return true;
+    }
     chip_ = gpiod_chip_open_by_name(chipName_.c_str());
     if (!chip_) {
         std::cerr << "[gpio] cannot open chip " << chipName_ << "\n";

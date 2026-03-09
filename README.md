@@ -1,8 +1,8 @@
 # Rover Control System
 
 A full-stack rover platform built on top of a **BTT Pi 1.2** (Klipper board repurposed),
-using a **Teensy 4.1** as a motor/sensor hub, **BTS7960** H-bridge motor drivers,
-controlled from an **Android** app (or web wrapper) over **WiFi/WebSocket**.
+using a **Teensy 4.0** as a motor/sensor hub, **BTS7960** H-bridge motor drivers,
+controlled from a **Web UI** over **WiFi/WebSocket**.
 
 ---
 
@@ -10,10 +10,10 @@ controlled from an **Android** app (or web wrapper) over **WiFi/WebSocket**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Android App (Kotlin)                        │
+│                     Web UI (Browser)                            │
 │  ┌──────────────┐  ┌─────────────────────┐                     │
-│  │WebSocketMgr  │  │  JoystickView +     │                     │
-│  │  OkHttp WS   │  │  Camera MJPEG UI    │                     │
+│  │ WebSocket    │  │  Joystick +          │                     │
+│  │  Client      │  │  Camera MJPEG UI    │                     │
 │  └──────┬───────┘  └─────────────────────┘                     │
 └─────────┼───────────────────────────────────────────────────────┘
              │ WebSocket (port 9000)
@@ -94,22 +94,12 @@ rover/
 │       ├── MotorController.hpp  # BTS7960 dual H-bridge driver
 │       └── SensorHub.hpp    # Encoders + V/I/temp sensor aggregator
 │
-└── android_app/             # Android Kotlin app
-    ├── app/src/main/
-    │   ├── java/com/rover/app/
-    │   │   ├── MainActivity.kt
-    │   │   ├── RoverProtocol.kt   # Message builder + data classes
-    │   │   ├── RoverViewModel.kt  # State manager + command router
-    │   │   ├── ble/BleManager.kt
-    │   │   ├── network/WebSocketManager.kt
-    │   │   └── ui/
-    │   │       ├── JoystickView.kt
-    │   │       ├── ConnectionFragment.kt
-    │   │       ├── ControllerFragment.kt
-    │   │       ├── CameraFragment.kt  (+ MjpegView)
-    │   │       └── OtaFragment.kt
-    │   └── res/
-    └── build.gradle.kts
+└── teensy_firmware/         # PlatformIO project (Teensy 4.1)
+    ├── platformio.ini
+    └── src/
+        ├── main.cpp         # Arduino loop + serial JSON protocol
+        ├── MotorController.hpp  # BTS7960 dual H-bridge driver
+        └── SensorHub.hpp    # Dual current sense + telemetry stub
 ```
 
 ---
@@ -186,13 +176,9 @@ For normal development, prefer the cross/CI flow below to avoid RAM pressure on-
 
 Legacy aliases still work: `monitor ...` and `status ...`.
 
-### 8 — Android App
+### 8 — Web UI
 
-Open `android_app/` in **Android Studio**, or:
-
-```bash
-./ogun build android           # debug APK via Gradle
-```
+Control the rover through the web UI at `http://<pi-ip>:8080`.
 
 ### Build Targets Reference
 
@@ -202,7 +188,6 @@ Open `android_app/` in **Android Studio**, or:
 | `./ogun build pi --safe` | Build `rover_server` natively with low-RAM-safe settings |
 | `./ogun build teensy` | Build Teensy `.hex` via PlatformIO |
 | `./ogun build cross` | Cross-compile `rover_server` for ARM64 |
-| `./ogun build android` | Build Android APK (debug) |
 | `./ogun flash teensy` | Flash Teensy via USB |
 | `./ogun package` | Create `rover-update.tar.gz` bundle |
 | `./ogun deploy <ip>` | Package + deploy to Pi via SSH |
@@ -370,9 +355,8 @@ Web UI status endpoint:
 ## Remote Teensy Flashing (OTA)
 
 1. Compile your updated Teensy firmware in PlatformIO → produces `.hex`
-2. In the Android app → **Controller** → **⬆ FW** button
-3. Pick the `.hex` file
-4. Tap **Flash Teensy** — the Pi receives chunks, assembles the hex, and calls `teensy_loader_cli`
+2. In the Web UI → **OTA** panel → upload the `.hex` file
+3. Tap **Flash Teensy** — the Pi receives chunks, assembles the hex, and calls `teensy_loader_cli`
 
 The Teensy auto-reboots into bootloader mode when the Pi calls `teensy_loader_cli`.
 No physical button press needed (Teensy 4.x supports auto-reboot via USB).
@@ -390,9 +374,3 @@ No physical button press needed (Teensy 4.x supports auto-reboot via USB).
 
 ### Teensy (PlatformIO)
 - `paulstoffregen/Encoder`
-
-### Android
-- OkHttp 4 (WebSocket)
-- AndroidX Navigation
-- AndroidX Lifecycle / ViewModel
-- Kotlin Coroutines

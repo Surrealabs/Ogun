@@ -3,12 +3,12 @@
 #  ogun — Unified CLI for the Ogun Rover build system
 #
 #  Usage:
-#    ./ogun build [all|pi|teensy|android]
+#    ./ogun build [all|pi|teensy|cross]
 #    ./ogun flash [teensy]
 #    ./ogun deploy <pi-ip> [--user root]
 #    ./ogun monitor [serial|rover]
 #    ./ogun status <pi-ip>
-#    ./ogun clean [all|pi|teensy|android|package]
+#    ./ogun clean [all|pi|teensy|package]
 #    ./ogun info
 #    ./ogun help
 #
@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR"
 PI_DIR="$ROOT_DIR/pi_server"
 TEENSY_DIR="$ROOT_DIR/teensy_firmware"
-ANDROID_DIR="$ROOT_DIR/android_app"
 
 # GitHub repo for releases (owner/repo format)
 # Set this to your actual repo:
@@ -94,24 +93,13 @@ cmd_build() {
             need_cmd pio "Install: pip install platformio"
             make -C "$ROOT_DIR" teensy
             ;;
-        android)
-            info "Building Android APK (debug)..."
-            if [ ! -f "$ANDROID_DIR/gradlew" ]; then
-                die "gradlew not found in android_app/. Open in Android Studio first."
-            fi
-            make -C "$ROOT_DIR" android
-            ;;
-        android-release)
-            info "Building Android APK (release)..."
-            make -C "$ROOT_DIR" android-release
-            ;;
         cross)
             info "Cross-compiling rover_server for ARM64..."
             need_cmd aarch64-linux-gnu-g++ "Install: sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
             make -C "$ROOT_DIR" cross
             ;;
         *)
-            die "Unknown build target: $target (options: all, pi, teensy, android, cross)"
+            die "Unknown build target: $target (options: all, pi, teensy, cross)"
             ;;
     esac
 }
@@ -238,7 +226,6 @@ cmd_clean() {
         all)     make -C "$ROOT_DIR" clean-all ;;
         pi)      make -C "$ROOT_DIR" clean-pi ;;
         teensy)  make -C "$ROOT_DIR" clean-teensy ;;
-        android) make -C "$ROOT_DIR" clean-android ;;
         package) make -C "$ROOT_DIR" clean-package ;;
         *)       die "Unknown clean target: $target" ;;
     esac
@@ -520,7 +507,7 @@ cmd_help() {
     echo "Usage: ./ogun <command> [args...]"
     echo ""
     echo -e "${BOLD}Build:${NC}"
-    echo "  build [all|pi|teensy|android|cross]  Build component(s)  (default: all)"
+    echo "  build [all|pi|teensy|cross]          Build component(s)  (default: all)"
     echo "  flash [teensy]                        Flash firmware via USB"
     echo ""
     echo -e "${BOLD}Deploy:${NC}"
@@ -550,7 +537,7 @@ cmd_help() {
     echo "  info                                  Show build environment"
     echo ""
     echo -e "${BOLD}Clean:${NC}"
-    echo "  clean [all|pi|teensy|android|package] Remove build artifacts"
+    echo "  clean [all|pi|teensy|package]         Remove build artifacts"
     echo ""
     echo -e "${BOLD}Workflows:${NC}"
     echo ""

@@ -13,26 +13,27 @@ serial_baud    = 115200
 teensy_push_fw_config = true
 
 # Teensy firmware motor/encoder pin map (digital pins)
-teensy_l_rpwm_pin = 21
-teensy_l_lpwm_pin = 19
-teensy_l_en_pin   = 18
-teensy_r_rpwm_pin = 22
-teensy_r_lpwm_pin = 23
-teensy_r_en_pin   = 16
-teensy_enc_la_pin = 8
-teensy_enc_lb_pin = 9
-teensy_enc_ra_pin = 10
-teensy_enc_rb_pin = 11
+teensy_l_rpwm_pin = 10
+teensy_l_lpwm_pin = 11
+teensy_l_en_pin   = 8
+teensy_r_rpwm_pin = 15
+teensy_r_lpwm_pin = 14
+teensy_r_en_pin   = 17
+teensy_enc_la_pin = 2
+teensy_enc_lb_pin = 3
+teensy_enc_ra_pin = 4
+teensy_enc_rb_pin = 5
 
 # Teensy analog sensor pin map
 teensy_vbat_adc_pin = 14
-teensy_curr_adc_pin = 17
-teensy_temp_adc_pin = 20
+teensy_curr_l_adc_pin = 19
+teensy_curr_r_adc_pin = 16
+teensy_temp_adc_pin = 23
 
 # Teensy sensor calibration + timings
 teensy_vbat_div_ratio = 4.03
-teensy_curr_zero_mv = 1650.0
-teensy_curr_sens_mv_per_a = 66.0
+teensy_curr_zero_mv = 0.0
+teensy_curr_sens_mv_per_a = 8.5
 
 # Teensy drive behavior tuning (firmware-side safety)
 # Reduce these for safer indoor testing.

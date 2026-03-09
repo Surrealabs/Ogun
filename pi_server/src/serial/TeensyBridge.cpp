@@ -113,9 +113,10 @@ void TeensyBridge::parseLine(const std::string& line) {
     TeensySensors s;
     s.enc_l   = getFloat("enc_l");
     s.enc_r   = getFloat("enc_r");
-    s.voltage = getFloat("volt");
-    s.current = getFloat("curr");
-    s.temp    = getFloat("temp");
+    s.voltage   = getFloat("volt");
+    s.current_l = getFloat("curr_l");
+    s.current_r = getFloat("curr_r");
+    s.temp      = getFloat("temp");
     {
         std::lock_guard<std::mutex> lk(sensorMtx_);
         latest_ = s;
