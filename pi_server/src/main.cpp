@@ -288,8 +288,6 @@ static void dispatchCommand(const std::string& json,
             std::lock_guard<std::mutex> ck(controlMtx);
             control.started = false;
         }
-        gpio.set(RoverGpio::LED_FWD, false);
-        gpio.set(RoverGpio::LED_REV, false);
         broadcastAll(ws, webui, powerStateJson(power));
         return;
     }
@@ -453,8 +451,6 @@ static void dispatchCommand(const std::string& json,
             control.estopLatched = true;
             control.started = false;
         }
-        gpio.set(RoverGpio::LED_FWD, false);
-        gpio.set(RoverGpio::LED_REV, false);
         return;
     }
     // --- Drive ---

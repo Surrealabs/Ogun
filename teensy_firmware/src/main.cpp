@@ -226,6 +226,7 @@ void processCommand(const char* line) {
         return;
     }
     if (jsonHasKey(line, "\"sensor_req\"")) {
+        lastDriveMs = millis();  // reset watchdog — Pi is alive
         sensors->update();
         char buf[200];
         sensors->toJson(buf, sizeof(buf));
