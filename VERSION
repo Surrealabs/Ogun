@@ -10,7 +10,7 @@
 
 VERSION_MAJOR=0
 VERSION_MINOR=9
-VERSION_PATCH=4
+VERSION_PATCH=5
 VERSION_TAG=
 
-# Full version string: 0.9.4
+# Full version string: 0.9.5
