@@ -44,6 +44,28 @@ controlled from an **Android** app (or web wrapper) over **WiFi/WebSocket**.
 
 ---
 
+## Current Bring-Up Mode (Mar 2026)
+
+This repo is currently set up for a bare-bones rover bring-up workflow:
+
+- Drivetrain is `disarmed by default` on server startup.
+- WebUI now uses a single `START / E-BRK / CLEAR` ignition button:
+    - `START` appears when disarmed and prechecks pass.
+    - `E-BRK` appears when started.
+    - `CLEAR` appears when E-Brake is latched.
+- `drive` commands are ignored unless drivetrain is started and not E-Braked.
+- Tune dialog includes `Swap Front/Back` camera role mapping.
+- Teensy telemetry is in bare-bones mode:
+    - `curr` is active.
+    - `volt`, `temp`, `enc_l`, `enc_r` are forced to `0` until wiring is added.
+
+Verification now runs in CI before build:
+
+- Script: `scripts/verify.sh`
+- Workflow gate: `.github/workflows/build.yml` (`verify` job, then `build`)
+
+---
+
 ## Repository Layout
 
 ```
@@ -287,6 +309,8 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Direction | Type | Payload keys |
 |-----------|------|--------------|
 | Phone → Pi | `drive` | `x`, `y`, `rot` (−1..1) |
+| Phone → Pi | `ignition_start` | — |
+| Phone → Pi | `estop_clear` | — |
 | Phone → Pi | `gpio` | `pin`, `state` (bool) |
 | Phone → Pi | `estop` | — |
 | Phone → Pi | `audio` | `file` |
@@ -295,7 +319,7 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Phone → Pi | `cameras` | `enabled` (bool) |
 | Phone → Pi | `sleep` | — |
 | Phone → Pi | `wake` | — |
-| Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr`, `temp` |
+| Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr`, `temp`, `started`, `estop`, `precheck_ok` |
 | Pi → Phone | `ota_prog` | `pct` (0-100), `msg` |
 | Pi → Phone | `power` | `sleeping`, `cameras_on` |
 
@@ -307,6 +331,11 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Pi → Teensy | `stop` | — |
 | Pi → Teensy | `sensor_req` | — |
 | Pi → Teensy | `enc_reset` | — |
+| Pi → Teensy | `arm` | — |
+| Pi → Teensy | `disarm` | — |
+| Pi → Teensy | `estop` | — |
+| Pi → Teensy | `estop_clear` | — |
+| Pi → Teensy | `bootloader` | — |
 | Teensy → Pi | `sensors` | `enc_l`, `enc_r`, `volt`, `curr`, `temp` |
 
 ---
@@ -315,9 +344,14 @@ Pi: /tmp/ogun-update.XXXXXX/
 
 | Service | Protocol | Default Port |
 |---------|----------|-------------|
+| Web UI | HTTP + WS | 8080 |
 | Control | WebSocket | 9000 |
 | Camera 0 | HTTP MJPEG | 8081 |
 | Camera 1 | HTTP MJPEG | 8082 |
+
+Web UI status endpoint:
+
+- `GET /api/status` (note: not `/status`)
 
 ---
 
