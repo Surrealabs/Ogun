@@ -118,6 +118,12 @@ rover/
 
 All builds are managed through the `ogun` CLI or `make`. Everything runs on Linux.
 
+### Recommended Workflow for BTT Pi (1 GB RAM)
+
+- Treat the Pi as a deploy/update target, not a primary build machine.
+- Build/release through GitHub Actions (`git push` + version tag), then run `ogun update` on the Pi.
+- If you must build on the Pi, use safe mode (`./ogun build pi --safe`) to force single-job compilation.
+
 ### 1 — First-time Pi Setup (run as root on the BTT Pi)
 
 ```bash
@@ -125,7 +131,7 @@ git clone <this-repo> /opt/rover-src
 cd /opt/rover-src
 chmod +x ogun
 sudo ./ogun deps          # install all system dependencies
-./ogun build pi            # build rover_server
+./ogun build pi --safe     # build rover_server (single-job mode on Pi)
 sudo make install          # install binary + systemd service
 ```
 
@@ -150,8 +156,10 @@ Or use PlatformIO directly in VS Code.
 ### 4 — Dev Cycle (on the Pi)
 
 ```bash
-./ogun build pi && sudo systemctl restart rover
+./ogun build pi --safe && sudo systemctl restart rover
 ```
+
+For normal development, prefer the cross/CI flow below to avoid RAM pressure on-device.
 
 ### 5 — Dev Cycle (cross-compile from desktop)
 
@@ -171,10 +179,12 @@ Or use PlatformIO directly in VS Code.
 ### 7 — Monitor & Status
 
 ```bash
-./ogun monitor serial          # watch Teensy serial output
-./ogun monitor rover <pi-ip>   # tail rover logs on Pi
-./ogun status <pi-ip>          # system + service health check
+./ogun log teensy              # watch Teensy serial output
+./ogun log rover <pi-ip>       # tail rover logs on Pi
+./ogun check system <pi-ip>    # system + service health check
 ```
+
+Legacy aliases still work: `monitor ...` and `status ...`.
 
 ### 8 — Android App
 
@@ -189,21 +199,22 @@ Open `android_app/` in **Android Studio**, or:
 | Command | Description |
 |---------|-------------|
 | `./ogun build all` | Build Pi server + Teensy firmware |
-| `./ogun build pi` | Build `rover_server` natively |
+| `./ogun build pi --safe` | Build `rover_server` natively with low-RAM-safe settings |
 | `./ogun build teensy` | Build Teensy `.hex` via PlatformIO |
 | `./ogun build cross` | Cross-compile `rover_server` for ARM64 |
 | `./ogun build android` | Build Android APK (debug) |
 | `./ogun flash teensy` | Flash Teensy via USB |
 | `./ogun package` | Create `rover-update.tar.gz` bundle |
 | `./ogun deploy <ip>` | Package + deploy to Pi via SSH |
-| `./ogun update` | Pull latest GitHub Release + apply (on Pi) |
-| `./ogun update --flash-teensy` | Update + flash Teensy firmware |
-| `./ogun autoupdate enable` | Enable scheduled background updates on Pi |
-| `./ogun autoupdate status` | Show auto-update timer/service status |
+| `./ogun update system` | Pull latest GitHub Release and update rover software |
+| `./ogun update teensy` | Update and flash Teensy firmware |
+| `./ogun update all` | Update rover software + Teensy firmware |
+| `./ogun enable autoupdate` | Enable scheduled background updates on Pi |
+| `./ogun check autoupdate` | Show auto-update timer/service status |
 | `./ogun release patch` | Bump version, git tag (you push) |
-| `./ogun monitor serial` | Watch Teensy serial output |
-| `./ogun monitor rover <ip>` | Tail rover service logs |
-| `./ogun status <ip>` | Show Pi system + rover health |
+| `./ogun log teensy` | Watch Teensy serial output |
+| `./ogun log rover <ip>` | Tail rover service logs |
+| `./ogun check system <ip>` | Show Pi system + rover health |
 | `./ogun clean [target]` | Remove build artifacts |
 | `./ogun deps` | Install build deps (sudo, on Pi) |
 | `./ogun info` | Show build environment |
@@ -223,21 +234,22 @@ Builds are automated via **GitHub Actions**. When you push a version tag, CI wil
 ### Cutting a release
 
 ```bash
-./ogun release patch          # bumps 0.1.0 → 0.1.1, creates git tag v0.1.1
-git push origin main v0.1.1   # pushes code + tag → triggers CI
+./ogun release patch          # bumps patch and creates git tag
+git push origin main <tag>    # pushes code + tag → triggers CI
 ```
 
 ### Updating the Pi (from a GitHub Release)
 
 SSH into the Pi:
 ```bash
-sudo ./ogun update                 # pulls latest release, updates rover_server
-sudo ./ogun update --flash-teensy  # also flashes the Teensy
+sudo ./ogun update system   # pulls latest release and updates rover software
+sudo ./ogun update teensy   # update + flash Teensy
+sudo ./ogun update all      # same as teensy (full update)
 ```
 
 Or for a specific version:
 ```bash
-sudo ./ogun update --version v0.1.0 --flash-teensy
+sudo ./ogun update all --version v0.9.0
 ```
 
 ### Optional: Scheduled Auto-Updates on the Pi
@@ -245,22 +257,22 @@ sudo ./ogun update --version v0.1.0 --flash-teensy
 After updating to a release that includes auto-update files, enable the timer:
 
 ```bash
-sudo ./ogun autoupdate enable
+sudo ./ogun enable autoupdate
 ```
 
 Default schedule is every 1 hour (`rover-auto-update.timer`) and updates rover software without flashing Teensy.
 
 ```bash
-sudo ./ogun autoupdate status
+sudo ./ogun check autoupdate
 sudo ./ogun autoupdate run-now
-sudo ./ogun autoupdate disable
+sudo ./ogun disable autoupdate
 ```
 
 The update flow:
 ```
 GitHub Release (.tar.gz)
     │
-    ↓  curl/wget
+    ↓  streamed curl/wget extraction
 Pi: /tmp/ogun-update.XXXXXX/
     ├── rover_server          → /usr/local/bin/rover_server
     ├── teensy_firmware.hex   → teensy_loader_cli → Teensy USB
