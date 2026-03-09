@@ -63,23 +63,21 @@ public:
 
         // Reconstruct throttle/turn so we can cap and shape each axis independently.
         float throttle = (leftSpeed + rightSpeed) * 0.5f;
-        float turn = (leftSpeed - rightSpeed) * 0.5f;
+        // Turn axis ignored — car chassis, both motors drive same direction.
+        // Turn will be handled by a separate steering motor later.
 
         throttle = constrain(throttle, -1.0f, 1.0f);
-        turn = constrain(turn, -1.0f, 1.0f);
 
         if (throttle >= 0.0f) {
             throttle = min(throttle, constrain(tuning_.maxForward, 0.0f, 1.0f));
         } else {
             throttle = max(throttle, -constrain(tuning_.maxReverse, 0.0f, 1.0f));
         }
-        turn = constrain(turn, -constrain(tuning_.maxTurn, 0.0f, 1.0f), constrain(tuning_.maxTurn, 0.0f, 1.0f));
 
         throttle = applyExpo(throttle, max(0.2f, tuning_.throttleExpo));
-        turn = applyExpo(turn, max(0.2f, tuning_.turnExpo));
 
-        const float targetL = constrain(throttle + turn, -1.0f, 1.0f);
-        const float targetR = constrain(throttle - turn, -1.0f, 1.0f);
+        const float targetL = constrain(throttle, -1.0f, 1.0f);
+        const float targetR = constrain(throttle, -1.0f, 1.0f);
 
         outLeft_ = slew(outLeft_, targetL, dt);
         outRight_ = slew(outRight_, targetR, dt);
