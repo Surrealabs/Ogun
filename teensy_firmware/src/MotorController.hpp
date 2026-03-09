@@ -107,8 +107,22 @@ private:
         return sign * powf(fabsf(v), expo);
     }
 
+    // Force slew through zero when direction reverses (prevents current spike)
     float slew(float current, float target, float dt) const {
         const float delta = target - current;
+        // If crossing zero (direction reversal), force decel to zero first
+        if (current > MOTOR_ZERO_EPSILON && target < -MOTOR_ZERO_EPSILON) {
+            const float rate = max(0.05f, tuning_.accelDownPerSec);
+            const float maxStep = rate * dt;
+            float next = current - maxStep;
+            return (next <= 0.0f) ? 0.0f : next;
+        }
+        if (current < -MOTOR_ZERO_EPSILON && target > MOTOR_ZERO_EPSILON) {
+            const float rate = max(0.05f, tuning_.accelDownPerSec);
+            const float maxStep = rate * dt;
+            float next = current + maxStep;
+            return (next >= 0.0f) ? 0.0f : next;
+        }
         const float curMag = fabsf(current);
         const float tgtMag = fabsf(target);
         const bool accelerating = tgtMag > curMag;
@@ -122,9 +136,10 @@ private:
     void setMotor(const MotorPins& m, float speed) {
         speed = constrain(speed, -1.f, 1.f);
         if (fabsf(speed) <= MOTOR_ZERO_EPSILON) {
+            // Brake: both PWM low, keep EN high briefly to let current decay
             analogWrite(m.rpwm, 0);
             analogWrite(m.lpwm, 0);
-            digitalWrite(m.en, LOW);
+            digitalWrite(m.en, HIGH);
             return;
         }
 
