@@ -291,6 +291,10 @@ static void dispatchCommand(const std::string& json,
         gpio.set(RoverGpio::LED_FWD, false);
         gpio.set(RoverGpio::LED_REV, false);
         broadcastAll(ws, webui, powerStateJson(power));
+
+        // Sleep mode requests a clean service recycle so rover + web UI stack
+        // comes back in a known-good state without manual intervention.
+        std::system("sh -c 'sleep 1; systemctl restart rover.service >/dev/null 2>&1 &' ");
         return;
     }
     if (type == RoverCmd::WAKE) {
