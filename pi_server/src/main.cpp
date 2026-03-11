@@ -57,7 +57,8 @@ static std::string buildTelemetry(const TeensySensors& s,
                                              GpioController& gpio,
                                              bool started,
                                              bool estopLatched,
-                                             bool precheckOk) {
+                                             bool precheckOk,
+                                             bool teensyConnected) {
     std::ostringstream ss;
     ss << "{\"type\":\"telemetry\","
        << "\"enc_l\":"   << s.enc_l   << ","
@@ -68,7 +69,8 @@ static std::string buildTelemetry(const TeensySensors& s,
        << "\"temp\":"    << s.temp    << ","
          << "\"started\":" << (started ? "true" : "false") << ","
          << "\"estop\":" << (estopLatched ? "true" : "false") << ","
-         << "\"precheck_ok\":" << (precheckOk ? "true" : "false")
+         << "\"precheck_ok\":" << (precheckOk ? "true" : "false") << ","
+         << "\"teensy_connected\":" << (teensyConnected ? "true" : "false")
        << "}";
     return ss.str();
 }
@@ -426,8 +428,12 @@ static void dispatchCommand(const std::string& json,
 
     // --- Clear E-STOP latch (stays disarmed until ignition_start) ---
     if (type == RoverCmd::ESTOP_CLEAR) {
-        teensy.sendRaw("{\"cmd\":\"estop_clear\"}");
-        teensy.sendStop();
+        if (teensy.isOpen()) {
+            teensy.sendRaw("{\"cmd\":\"estop_clear\"}");
+            teensy.sendStop();
+        }
+        // Clear local state regardless — Teensy will get the command
+        // on reconnect via the fw_config push.
         std::lock_guard<std::mutex> ck(controlMtx);
         control.estopLatched = false;
         control.started = false;
@@ -511,6 +517,16 @@ static void dispatchCommand(const std::string& json,
         return;
     }
 
+    // --- Reboot Pi ---
+    if (type == RoverCmd::REBOOT) {
+        broadcastAll(ws, webui, "{\"type\":\"update\",\"status\":\"rebooting\",\"detail\":\"Pi rebooting now...\"}");
+        teensy.sendStop();
+        teensy.sendRaw("{\"cmd\":\"disarm\"}");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::system("sudo reboot");
+        return;
+    }
+
     std::cerr << "[main] unknown command type: " << type << "\n";
 }
 
@@ -573,6 +589,21 @@ int main(int argc, char* argv[]) {
     control.invertLeftMotor = cfg.invert_left_motor;
     control.invertRightMotor = cfg.invert_right_motor;
 
+    // ---- Wire up Teensy reconnect → re-push fw config + disarm ----
+    teensy.onReconnect([&]() {
+        if (cfg.teensy_push_fw_config) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            teensy.sendRaw(teensyFwConfigCommand(cfg));
+            std::cout << "[main] re-pushed teensy fw config after reconnect\n";
+        }
+        teensy.sendRaw("{\"cmd\":\"disarm\"}");
+        {
+            std::lock_guard<std::mutex> ck(controlMtx);
+            control.started = false;
+            control.estopLatched = false;
+        }
+    });
+
     // ---- Wire up sensor data → telemetry broadcast --------
     teensy.onSensors([&](const TeensySensors& s) {
         bool sleeping = false;
@@ -588,7 +619,7 @@ int main(int argc, char* argv[]) {
             estopLatched = control.estopLatched;
         }
         const bool precheckOk = teensy.isOpen() && !sleeping;
-        std::string json = buildTelemetry(s, gpio, started, estopLatched, precheckOk);
+        std::string json = buildTelemetry(s, gpio, started, estopLatched, precheckOk, teensy.isOpen());
         broadcastAll(ws, webuiPtr, json);
         webui.setLatestStatus(json);
     });

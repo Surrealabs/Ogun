@@ -63,8 +63,32 @@ bool TeensyBridge::open() {
 
 void TeensyBridge::close() {
     running_ = false;
-    if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+    {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+    }
     if (rxThread_.joinable()) rxThread_.join();
+}
+
+bool TeensyBridge::tryReopen() {
+    // Close stale fd if any
+    {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+    }
+    int newFd = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    if (newFd < 0) return false;
+    {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        fd_ = newFd;
+    }
+    if (!configurePort(baudRate(baud_))) {
+        std::lock_guard<std::mutex> lk(writeMtx_);
+        ::close(fd_); fd_ = -1;
+        return false;
+    }
+    std::cout << "[teensy] reconnected on " << port_ << "\n";
+    return true;
 }
 
 bool TeensyBridge::writeLine(const std::string& s) {
@@ -129,13 +153,36 @@ void TeensyBridge::parseLine(const std::string& line) {
 void TeensyBridge::rxThread() {
     std::string buf;
     char ch;
+    int errCount = 0;
     while (running_) {
-        ssize_t n = ::read(fd_, &ch, 1);
-        if (n <= 0) {
+        int curFd;
+        { std::lock_guard<std::mutex> lk(writeMtx_); curFd = fd_; }
+        if (curFd < 0) {
+            // Port gone — try to reconnect every 1 s
+            usleep(1000000);
             if (!running_) break;
-            usleep(1000);
+            if (tryReopen()) {
+                errCount = 0;
+                buf.clear();
+                if (reconnectCb_) reconnectCb_();
+            }
             continue;
         }
+        ssize_t n = ::read(curFd, &ch, 1);
+        if (n <= 0) {
+            if (!running_) break;
+            if (++errCount > 50) {
+                // Sustained read failures — Teensy likely disconnected
+                std::cerr << "[teensy] lost connection, will retry...\n";
+                std::lock_guard<std::mutex> lk(writeMtx_);
+                if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+                errCount = 0;
+            } else {
+                usleep(10000);
+            }
+            continue;
+        }
+        errCount = 0;
         if (ch == '\n') {
             if (!buf.empty()) parseLine(buf);
             buf.clear();

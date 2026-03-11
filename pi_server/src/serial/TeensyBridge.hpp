@@ -20,7 +20,8 @@ struct TeensySensors {
 
 class TeensyBridge {
 public:
-    using SensorCallback = std::function<void(const TeensySensors&)>;
+    using SensorCallback    = std::function<void(const TeensySensors&)>;
+    using ReconnectCallback = std::function<void()>;
 
     explicit TeensyBridge(const std::string& port, uint32_t baud = 115200);
     ~TeensyBridge();
@@ -40,6 +41,9 @@ public:
     // Register a callback for incoming sensor frames
     void onSensors(SensorCallback cb) { sensorCb_ = std::move(cb); }
 
+    // Called after a successful reconnect (use to re-push fw config)
+    void onReconnect(ReconnectCallback cb) { reconnectCb_ = std::move(cb); }
+
     // Latest sensor snapshot (thread-safe)
     TeensySensors latestSensors() const;
 
@@ -48,6 +52,7 @@ private:
     void parseLine(const std::string& line);
     bool writeLine(const std::string& s);
     bool configurePort(speed_t baud);
+    bool tryReopen();   // attempt to reopen the serial port
 
     std::string       port_;
     uint32_t          baud_;
@@ -59,4 +64,5 @@ private:
     mutable std::mutex   sensorMtx_;
     TeensySensors        latest_;
     SensorCallback       sensorCb_;
+    ReconnectCallback    reconnectCb_;
 };

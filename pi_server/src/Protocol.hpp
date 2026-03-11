@@ -22,6 +22,7 @@ namespace RoverCmd {
     constexpr const char* UPDATE_CHECK = "update_check"; // trigger auto-update service now
     constexpr const char* DRIVE_TUNE = "drive_tune"; // runtime tuning for Teensy motor curve/ramp
     constexpr const char* DRIVE_TUNE_SAVE = "drive_tune_save"; // runtime apply + persist to rover.conf
+    constexpr const char* REBOOT = "reboot"; // reboot the Pi
 }
 
 // ---- Outbound status types (Pi → Phone) --------------------

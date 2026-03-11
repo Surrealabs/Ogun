@@ -395,6 +395,7 @@ canvas.joystick {
   <button class="btn" id="btnCameras" title="Turn camera streams on/off">Cameras On</button>
   <button class="btn" id="btnSleep" title="Sleep/wake rover server">Sleep</button>
   <button class="btn" id="btnCheckUpdates" title="Trigger rover update check now">Check Updates</button>
+  <button class="btn danger" id="btnReboot" title="Reboot the Pi">Reboot</button>
   <span class="gamepad-icon" id="gamepadIcon" title="Gamepad">&#127918;</span>
   <button class="btn" id="btnLog" onclick="toggleLog()">Log</button>
   <button class="btn accent" id="btnOta">&#11014; FW</button>
@@ -413,6 +414,7 @@ canvas.joystick {
       <div class="telem-card"><div class="telem-label">EncL</div><div class="telem-value" id="tvEncL">0</div></div>
       <div class="telem-card"><div class="telem-label">EncR</div><div class="telem-value" id="tvEncR">0</div></div>
       <div class="telem-card"><div class="telem-label">Latency</div><div class="telem-value" id="tvLat">--</div></div>
+      <div class="telem-card"><div class="telem-label">Teensy</div><div class="telem-value" id="tvTeensy">--</div></div>
     </div>
 
     <div class="section-title" style="margin-top:8px">Controls</div>
@@ -568,6 +570,7 @@ let winCurrL = [], winCurrR = [], winLat = [];
 let editMode = false;
 let camerasEnabled = true;
 let roverSleeping = false;
+let teensyConnected = false;
 let mainCamera = 'front';
 
 const LAYOUT_KEY = 'ogun-float-controls-v1';
@@ -842,7 +845,7 @@ function sendIgnitionStart() {
 
 function clearEstopLatch() {
   sendJson({ type: 'estop_clear' });
-  addLog('E-Brake clear requested');
+  addLog('E-Brake clear requested' + (teensyConnected ? '' : ' (waiting for Teensy...)'));
 }
 
 function handleIgnitionButtonPress() {
@@ -1162,6 +1165,12 @@ function initPanelPrefs() {
     sendJson({ type: 'update_check' });
     addLog('Requested update check');
   });
+  $('btnReboot').addEventListener('click', () => {
+    if (confirm('Reboot the Pi? The rover will go offline for ~30 seconds.')) {
+      sendJson({ type: 'reboot' });
+      addLog('Reboot requested');
+    }
+  });
 
   updateRestoreButtons();
   updatePowerButtons();
@@ -1307,6 +1316,10 @@ function handleMessage(raw) {
       drivetrainStarted = !!msg.started;
       estopLatched = !!msg.estop;
       precheckOk = (typeof msg.precheck_ok === 'boolean') ? msg.precheck_ok : (connected && !roverSleeping);
+      teensyConnected = !!msg.teensy_connected;
+      const tvT = $('tvTeensy');
+      tvT.textContent = teensyConnected ? 'OK' : 'OFFLINE';
+      tvT.style.color = teensyConnected ? 'var(--accent)' : '#f44';
       updateIgnitionButton();
       // latency: sliding-window average of recent round-trips
       if (lastSendTime) {
