@@ -555,6 +555,12 @@ let connected = false;
 let lastTelem = {};
 let lastSendTime = 0;
 let servedFromRover = false; // true when page is served by the Pi's WebUI server
+
+// ---- EMA smoothing for telemetry display ----
+const EMA_ALPHA = 0.15;            // smoothing factor (lower = smoother)
+let emaCurrL = null;                // smoothed left current
+let emaCurrR = null;                // smoothed right current
+let emaLat   = null;                // smoothed latency
 let editMode = false;
 let camerasEnabled = true;
 let roverSleeping = false;
@@ -1246,6 +1252,7 @@ function doConnect() {
     drivetrainStarted = false;
     estopLatched = false;
     precheckOk = !roverSleeping;
+    emaCurrL = null; emaCurrR = null; emaLat = null;
     connectDialog.classList.add('hidden');
     statusDot.classList.add('connected');
     statusText.textContent = 'Connected (' + roverIp + ')';
@@ -1289,8 +1296,12 @@ function handleMessage(raw) {
     const msg = JSON.parse(raw);
     if (msg.type === 'telemetry') {
       lastTelem = msg;
-      $('tvCurrL').textContent = (msg.curr_l || 0).toFixed(2) + 'A';
-      $('tvCurrR').textContent = (msg.curr_r || 0).toFixed(2) + 'A';
+      const rawL = msg.curr_l || 0;
+      const rawR = msg.curr_r || 0;
+      emaCurrL = emaCurrL === null ? rawL : emaCurrL + EMA_ALPHA * (rawL - emaCurrL);
+      emaCurrR = emaCurrR === null ? rawR : emaCurrR + EMA_ALPHA * (rawR - emaCurrR);
+      $('tvCurrL').textContent = emaCurrL.toFixed(2) + 'A';
+      $('tvCurrR').textContent = emaCurrR.toFixed(2) + 'A';
       $('tvEncL').textContent  = msg.enc_l || 0;
       $('tvEncR').textContent  = msg.enc_r || 0;
       drivetrainStarted = !!msg.started;
@@ -1299,7 +1310,9 @@ function handleMessage(raw) {
       updateIgnitionButton();
       // latency estimate (if we sent a status req)
       if (lastSendTime) {
-        $('tvLat').textContent = (Date.now() - lastSendTime) + 'ms';
+        const rawLat = Date.now() - lastSendTime;
+        emaLat = emaLat === null ? rawLat : emaLat + EMA_ALPHA * (rawLat - emaLat);
+        $('tvLat').textContent = Math.round(emaLat) + 'ms';
       }
     } else if (msg.type === 'ota_prog') {
       $('ota-progress').value = msg.pct;
