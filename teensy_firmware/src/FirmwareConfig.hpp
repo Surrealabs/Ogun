@@ -76,7 +76,7 @@ namespace fwcfg {
 
 // ---- Timing -------------------------------------------------
 #ifndef ROVER_WATCHDOG_MS
-#define ROVER_WATCHDOG_MS 250
+#define ROVER_WATCHDOG_MS 500
 #endif
 #ifndef ROVER_TELEM_INTERVAL_MS
 #define ROVER_TELEM_INTERVAL_MS 100

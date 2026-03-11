@@ -215,7 +215,7 @@ void processCommand(const char* line) {
         }
         float l = applyDeadband(jsonGetFloat(line, "\"l\""), gCfg.inputDeadband);
         float r = applyDeadband(jsonGetFloat(line, "\"r\""), gCfg.inputDeadband);
-        motors->drive(l, r);
+        motors->setTarget(l, r);
         lastDriveMs = millis();
         return;
     }
@@ -355,12 +355,13 @@ void loop() {
         }
     }
 
-    // --- Watchdog: stop motors if no drive cmd received ----
+    // --- Watchdog: coast to zero if no comms for a while ----
+    // No hard stop — just set target to 0 and let the slew
+    // ramp down gently. Only e-stop/disarm do a hard stop.
     if ((now - lastDriveMs) > gCfg.watchdogMs) {
-        motors->stop();
+        motors->coast();  // target→0, slew handles gentle decel
         if (armed) {
             watchdogTrips++;
-            // Report watchdog trip once (not every loop)
             static uint32_t lastWdReportMs = 0;
             if ((now - lastWdReportMs) > 2000) {
                 char wdBuf[100];
@@ -371,7 +372,13 @@ void loop() {
                 lastWdReportMs = now;
             }
         }
-        lastDriveMs = now;  // prevent spamming stop()
+        lastDriveMs = now;  // prevent spamming coast()
+    }
+
+    // --- Run motor slew every loop tick ---------------------
+    // This advances the ramp smoothly regardless of command rate.
+    if (armed && motorsAllowed()) {
+        motors->tick();
     }
 
     // --- Auto-telemetry -------------------------------------

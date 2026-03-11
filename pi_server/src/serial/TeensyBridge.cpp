@@ -68,6 +68,8 @@ void TeensyBridge::close() {
 }
 
 bool TeensyBridge::writeLine(const std::string& s) {
+    std::lock_guard<std::mutex> lk(writeMtx_);
+    if (fd_ < 0) return false;
     std::string line = s + "\n";
     ssize_t n = ::write(fd_, line.c_str(), line.size());
     return n == (ssize_t)line.size();

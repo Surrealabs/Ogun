@@ -55,6 +55,7 @@ private:
     std::thread       rxThread_;
     std::atomic<bool> running_{false};
 
+    std::mutex           writeMtx_;     // serialize all serial writes
     mutable std::mutex   sensorMtx_;
     TeensySensors        latest_;
     SensorCallback       sensorCb_;

@@ -42,7 +42,7 @@ struct RoverConfig {
     bool  invert_left_motor = false;
     bool  invert_right_motor = false;
 
-    int teensy_watchdog_ms = 250;
+    int teensy_watchdog_ms = 500;
     int teensy_telem_interval_ms = 100;
 
     // --- BLE ---
