@@ -47,18 +47,17 @@ bool TeensyBridge::open() {
     fd_ = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (fd_ < 0) {
         std::cerr << "[teensy] open " << port_ << " failed: " << strerror(errno) << "\n";
-        return false;
-    }
-    if (!configurePort(baudRate(baud_))) {
+    } else if (!configurePort(baudRate(baud_))) {
         std::cerr << "[teensy] configure failed\n";
         ::close(fd_);
         fd_ = -1;
-        return false;
+    } else {
+        std::cout << "[teensy] connected on " << port_ << "\n";
     }
+    // Always start rxThread — it handles reconnect if fd_ < 0
     running_ = true;
     rxThread_ = std::thread(&TeensyBridge::rxThread, this);
-    std::cout << "[teensy] connected on " << port_ << "\n";
-    return true;
+    return fd_ >= 0;
 }
 
 void TeensyBridge::close() {
