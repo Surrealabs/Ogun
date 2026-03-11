@@ -652,7 +652,24 @@ int main(int argc, char* argv[]) {
             std::lock_guard<std::mutex> lk(powerMtx);
             sleeping = power.sleeping;
         }
-        if (!sleeping) teensy.requestSensors();
+        if (!sleeping) {
+            if (teensy.isOpen()) {
+                teensy.requestSensors();
+            } else {
+                // Teensy offline — still broadcast a status frame so
+                // the WebUI knows the link is down.
+                bool started, el;
+                {
+                    std::lock_guard<std::mutex> ck(controlMtx);
+                    started = control.started;
+                    el = control.estopLatched;
+                }
+                std::string json = buildTelemetry(
+                    TeensySensors{}, gpio, started, el, false, false);
+                broadcastAll(ws, webuiPtr, json);
+                webui.setLatestStatus(json);
+            }
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(telPeriodMs));
     }
 

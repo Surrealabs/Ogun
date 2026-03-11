@@ -181,6 +181,15 @@ canvas.joystick {
   background:rgba(210,153,34,0.82);
   box-shadow: 0 0 20px rgba(210,153,34,0.46);
 }
+#ignition-btn.nolink {
+  background:rgba(248,81,73,0.85);
+  box-shadow: 0 0 24px rgba(248,81,73,0.5);
+  animation: nolink-pulse 1.2s infinite;
+}
+@keyframes nolink-pulse {
+  0%,100% { opacity:1; }
+  50%     { opacity:0.55; }
+}
 #ignition-btn.disabled {
   opacity:0.45;
   cursor:not-allowed;
@@ -812,7 +821,14 @@ function updatePowerButtons() {
 function updateIgnitionButton() {
   const btn = $('ignition-btn');
   if (!btn) return;
-  btn.classList.remove('start', 'ebrake', 'latched', 'disabled');
+  btn.classList.remove('start', 'ebrake', 'latched', 'disabled', 'nolink');
+
+  if (!teensyConnected && connected) {
+    btn.classList.add('nolink');
+    btn.textContent = 'NO LINK';
+    btn.title = 'Teensy disconnected — reconnecting...';
+    return;
+  }
 
   if (estopLatched) {
     btn.classList.add('latched');
