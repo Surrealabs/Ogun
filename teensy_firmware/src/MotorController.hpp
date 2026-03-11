@@ -1,27 +1,23 @@
 #pragma once
 // ============================================================
-//  MotorController — BTS7960 dual H-bridge driver (tank drive)
+//  MotorController — BTS7960 dual H-bridge, car chassis
 //
-//  BTS7960 wiring per channel:
-//    RPWM → forward PWM   (analogWrite 0-255)
-//    LPWM → reverse PWM   (analogWrite 0-255)
-//    R_EN / L_EN → enable (HIGH to enable)
-//    VCC  → 5 V logic
-//    B+   → battery positive
-//    B-   → battery GND
+//  Simple tuning model:
+//    maxPwm     — PWM ceiling (0-255)
+//    minPwm     — PWM floor when moving (overcomes static friction)
+//    rampSec    — seconds to ramp from 0 → full power
+//    invertLeft / invertRight — flip motor direction
 //
-//  Two BTS7960 boards = one full H-bridge per motor (left & right).
+//  Both motors always receive the same throttle (car chassis).
 // ============================================================
 #include <Arduino.h>
 
 struct MotorTuning {
-    float maxForward = 1.0f;     // 0..1
-    float maxReverse = 1.0f;     // 0..1
-    float maxTurn    = 1.0f;     // 0..1
-    float throttleExpo = 1.0f;   // >= 0.2 (1.0 = linear)
-    float turnExpo     = 1.0f;   // >= 0.2 (1.0 = linear)
-    float accelUpPerSec   = 3.0f; // normalized speed/s
-    float accelDownPerSec = 5.0f; // normalized speed/s
+    uint8_t maxPwm     = 255;    // PWM ceiling (0-255)
+    uint8_t minPwm     = 0;      // PWM floor when moving (0-255)
+    float   rampSec    = 1.0f;   // seconds to ramp 0 → full
+    bool    invertLeft  = false;
+    bool    invertRight = false;
 };
 
 struct MotorPins {
@@ -31,6 +27,7 @@ struct MotorPins {
 };
 
 static constexpr float MOTOR_ZERO_EPSILON = 0.01f;
+static constexpr float DECEL_SECS = 0.15f;  // fixed fast decel
 
 class MotorController {
 public:
@@ -44,51 +41,37 @@ public:
         pinMode(right_.rpwm, OUTPUT);
         pinMode(right_.lpwm, OUTPUT);
         pinMode(right_.en,   OUTPUT);
-        // Start fully disabled, then stop() sets known-safe output states.
         digitalWrite(left_.en,  LOW);
         digitalWrite(right_.en, LOW);
         stop();
     }
 
-    // speed: -1.0 (full reverse) to +1.0 (full forward)
-    void setLeft(float speed)  { setMotor(left_,  speed); }
-    void setRight(float speed) { setMotor(right_, speed); }
+    void setLeft(float speed)  { setMotor(left_,  tuning_.invertLeft  ? -speed : speed); }
+    void setRight(float speed) { setMotor(right_, tuning_.invertRight ? -speed : speed); }
 
-    void drive(float leftSpeed, float rightSpeed) {
+    // Both l and r should be identical (car chassis), range -1..1
+    void drive(float leftIn, float rightIn) {
         const uint32_t now = millis();
         float dt = (lastUpdateMs_ == 0) ? 0.033f : (float)(now - lastUpdateMs_) / 1000.0f;
         if (dt < 0.001f) dt = 0.001f;
         if (dt > 0.25f) dt = 0.25f;
         lastUpdateMs_ = now;
 
-        // Reconstruct throttle/turn so we can cap and shape each axis independently.
-        float throttle = (leftSpeed + rightSpeed) * 0.5f;
-        // Turn axis ignored — car chassis, both motors drive same direction.
-        // Turn will be handled by a separate steering motor later.
+        // Car chassis: average to single throttle, ignore turn
+        float throttle = constrain((leftIn + rightIn) * 0.5f, -1.0f, 1.0f);
 
-        throttle = constrain(throttle, -1.0f, 1.0f);
+        // Map joystick → PWM-normalized target with min/max
+        float target = mapThrottle(throttle);
 
-        if (throttle >= 0.0f) {
-            throttle = min(throttle, constrain(tuning_.maxForward, 0.0f, 1.0f));
-        } else {
-            throttle = max(throttle, -constrain(tuning_.maxReverse, 0.0f, 1.0f));
-        }
+        // Slew-rate limit (accel uses rampSec, decel is always fast)
+        output_ = slew(output_, target, dt);
 
-        throttle = applyExpo(throttle, max(0.2f, tuning_.throttleExpo));
-
-        const float targetL = constrain(throttle, -1.0f, 1.0f);
-        const float targetR = constrain(throttle, -1.0f, 1.0f);
-
-        outLeft_ = slew(outLeft_, targetL, dt);
-        outRight_ = slew(outRight_, targetR, dt);
-
-        setLeft(outLeft_);
-        setRight(outRight_);
+        setLeft(output_);
+        setRight(output_);
     }
 
     void stop() {
-        outLeft_ = 0.0f;
-        outRight_ = 0.0f;
+        output_ = 0.0f;
         setLeft(0.0f);
         setRight(0.0f);
         lastUpdateMs_ = millis();
@@ -100,47 +83,48 @@ public:
     }
 
 private:
-    static float applyExpo(float v, float expo) {
-        const float sign = (v < 0.0f) ? -1.0f : 1.0f;
-        return sign * powf(fabsf(v), expo);
+    // Map joystick -1..1 → normalized output incorporating min/max PWM
+    float mapThrottle(float input) const {
+        if (fabsf(input) <= MOTOR_ZERO_EPSILON) return 0.0f;
+        const float sign = (input < 0.0f) ? -1.0f : 1.0f;
+        const float mag = fabsf(input);
+        const float minF = tuning_.minPwm / 255.0f;
+        const float maxF = tuning_.maxPwm / 255.0f;
+        if (maxF <= 0.0f) return 0.0f;
+        // Linear: tiny input → minF, full input → maxF
+        const float mapped = minF + mag * (maxF - minF);
+        return sign * constrain(mapped, 0.0f, 1.0f);
     }
 
-    // Force slew through zero when direction reverses (prevents current spike)
+    // Force decel through zero on direction reversal
     float slew(float current, float target, float dt) const {
-        const float delta = target - current;
-        // If crossing zero (direction reversal), force decel to zero first
         if (current > MOTOR_ZERO_EPSILON && target < -MOTOR_ZERO_EPSILON) {
-            const float rate = max(0.05f, tuning_.accelDownPerSec);
-            const float maxStep = rate * dt;
-            float next = current - maxStep;
+            float next = current - decelRate() * dt;
             return (next <= 0.0f) ? 0.0f : next;
         }
         if (current < -MOTOR_ZERO_EPSILON && target > MOTOR_ZERO_EPSILON) {
-            const float rate = max(0.05f, tuning_.accelDownPerSec);
-            const float maxStep = rate * dt;
-            float next = current + maxStep;
+            float next = current + decelRate() * dt;
             return (next >= 0.0f) ? 0.0f : next;
         }
-        const float curMag = fabsf(current);
-        const float tgtMag = fabsf(target);
-        const bool accelerating = tgtMag > curMag;
-        const float rate = accelerating ? max(0.05f, tuning_.accelUpPerSec)
-                                        : max(0.05f, tuning_.accelDownPerSec);
+        const float delta = target - current;
+        const bool accelerating = fabsf(target) > fabsf(current);
+        const float rate = accelerating ? accelRate() : decelRate();
         const float maxStep = rate * dt;
         if (fabsf(delta) <= maxStep) return target;
         return current + ((delta > 0.0f) ? maxStep : -maxStep);
     }
 
+    float accelRate() const { return 1.0f / max(0.05f, tuning_.rampSec); }
+    float decelRate() const { return 1.0f / DECEL_SECS; }
+
     void setMotor(const MotorPins& m, float speed) {
         speed = constrain(speed, -1.f, 1.f);
         if (fabsf(speed) <= MOTOR_ZERO_EPSILON) {
-            // Brake: both PWM low, keep EN high briefly to let current decay
             analogWrite(m.rpwm, 0);
             analogWrite(m.lpwm, 0);
-            digitalWrite(m.en, HIGH);
+            digitalWrite(m.en, HIGH);  // brake mode
             return;
         }
-
         digitalWrite(m.en, HIGH);
         uint8_t pwm = (uint8_t)(fabsf(speed) * 255.f);
         if (speed >= 0.f) {
@@ -154,7 +138,6 @@ private:
 
     MotorPins left_, right_;
     MotorTuning tuning_;
-    float outLeft_ = 0.0f;
-    float outRight_ = 0.0f;
+    float output_ = 0.0f;
     uint32_t lastUpdateMs_ = 0;
 };

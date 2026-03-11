@@ -82,28 +82,17 @@ namespace fwcfg {
 #define ROVER_TELEM_INTERVAL_MS 100
 #endif
 
-// ---- Drive behavior tuning ----------------------------------
-#ifndef ROVER_DRIVE_MAX_FWD
-#define ROVER_DRIVE_MAX_FWD 0.45f
+// ---- Drive behavior tuning (simple model) -------------------
+#ifndef ROVER_MAX_PWM
+#define ROVER_MAX_PWM 255
 #endif
-#ifndef ROVER_DRIVE_MAX_REV
-#define ROVER_DRIVE_MAX_REV 0.35f
+#ifndef ROVER_MIN_PWM
+#define ROVER_MIN_PWM 0
 #endif
-#ifndef ROVER_TURN_MAX
-#define ROVER_TURN_MAX 0.50f
+#ifndef ROVER_RAMP_SEC
+#define ROVER_RAMP_SEC 1.0f
 #endif
-#ifndef ROVER_THROTTLE_EXPO
-#define ROVER_THROTTLE_EXPO 2.0f
-#endif
-#ifndef ROVER_TURN_EXPO
-#define ROVER_TURN_EXPO 1.5f
-#endif
-#ifndef ROVER_ACCEL_UP_PER_S
-#define ROVER_ACCEL_UP_PER_S 1.2f
-#endif
-#ifndef ROVER_ACCEL_DOWN_PER_S
-#define ROVER_ACCEL_DOWN_PER_S 8.0f
-#endif
+// (removed — replaced by ROVER_RAMP_SEC above)
 
 // ---- Safety -------------------------------------------------
 // Low-voltage cutoff: set to 0.0 to disable (BMS handles cutoff).
@@ -146,13 +135,9 @@ constexpr float CURR_SENS_MV_PER_A  = ROVER_CURR_SENS_MV_PER_A;
 constexpr uint32_t WATCHDOG_MS       = ROVER_WATCHDOG_MS;
 constexpr uint32_t TELEM_INTERVAL_MS = ROVER_TELEM_INTERVAL_MS;
 
-constexpr float DRIVE_MAX_FWD   = ROVER_DRIVE_MAX_FWD;
-constexpr float DRIVE_MAX_REV   = ROVER_DRIVE_MAX_REV;
-constexpr float TURN_MAX        = ROVER_TURN_MAX;
-constexpr float THROTTLE_EXPO   = ROVER_THROTTLE_EXPO;
-constexpr float TURN_EXPO       = ROVER_TURN_EXPO;
-constexpr float ACCEL_UP_PER_S  = ROVER_ACCEL_UP_PER_S;
-constexpr float ACCEL_DOWN_PER_S = ROVER_ACCEL_DOWN_PER_S;
+constexpr uint8_t MAX_PWM       = ROVER_MAX_PWM;
+constexpr uint8_t MIN_PWM       = ROVER_MIN_PWM;
+constexpr float   RAMP_SEC      = ROVER_RAMP_SEC;
 
 constexpr float LOW_VOLTAGE_CUTOFF = ROVER_LOW_VOLTAGE_CUTOFF;
 constexpr float LOW_VOLTAGE_RESUME = ROVER_LOW_VOLTAGE_RESUME;

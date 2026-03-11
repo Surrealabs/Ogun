@@ -35,20 +35,16 @@ teensy_vbat_div_ratio = 4.03
 teensy_curr_zero_mv = 0.0
 teensy_curr_sens_mv_per_a = 8.5
 
-# Teensy drive behavior tuning (firmware-side safety)
-# Reduce these for safer indoor testing.
-# 0.0-1.0 caps:
-teensy_drive_max_fwd = 0.60
-teensy_drive_max_rev = 0.45
-teensy_turn_max = 0.50
-# Expo > 1 softens low-stick response, keeping top-end available.
-teensy_throttle_expo = 1.40
-teensy_turn_expo = 1.55
-# Slew rates in normalized speed/second; lower = slower PWM ramp.
-teensy_accel_up_per_s = 1.20
-teensy_accel_down_per_s = 2.20
+# Teensy drive behavior tuning (simple model)
+# Max PWM ceiling (0-255)
+teensy_max_pwm = 255
+# Start PWM floor when moving (overcomes static friction, 0-255)
+teensy_min_pwm = 0
+# Ramp time: seconds to accelerate from 0 to full power
+teensy_ramp_sec = 1.0
+# Motor direction inversion (for mirror-mounted motors)
 invert_left_motor = false
-invert_right_motor = false
+invert_right_motor = true
 
 teensy_watchdog_ms = 500
 teensy_telem_interval_ms = 100

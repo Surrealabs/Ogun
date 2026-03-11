@@ -421,7 +421,7 @@ canvas.joystick {
     <div class="section-title" style="margin-top:8px">Drive</div>
     <div style="font-size:11px;color:var(--text-dim)">
       <div>L: <span id="tvDriveL">0.00</span> &nbsp; R: <span id="tvDriveR">0.00</span></div>
-      <div style="margin-top:2px">Throttle: <span id="tvThrottle">0.00</span> &nbsp; Rot: <span id="tvRot">0.00</span></div>
+      <div style="margin-top:2px">Throttle: <span id="tvThrottle">0.00</span></div>
     </div>
   </div>
 
@@ -465,24 +465,20 @@ canvas.joystick {
 <div id="tune-dialog" class="hidden">
   <div id="tune-box">
     <h3 style="margin-bottom:8px">Drive Tuning</h3>
-    <div style="font-size:12px;color:var(--text-dim)">Adjust limits and ramp rates, then Apply to send to Teensy immediately.</div>
-
-    <div class="tune-group-title">Maximums</div>
-    <div class="tune-row"><label for="tuneMaxFwd">Forward Max</label><input id="tuneMaxFwd" type="range" min="0" max="1" step="0.01"><span class="tune-val" id="tuneMaxFwdVal">1.00</span></div>
-    <div class="tune-row"><label for="tuneMaxRev">Reverse Max</label><input id="tuneMaxRev" type="range" min="0" max="1" step="0.01"><span class="tune-val" id="tuneMaxRevVal">1.00</span></div>
-    <div class="tune-row"><label for="tuneMaxTurn">Turn Max</label><input id="tuneMaxTurn" type="range" min="0" max="1" step="0.01"><span class="tune-val" id="tuneMaxTurnVal">1.00</span></div>
-
-    <div class="tune-group-title">Curve</div>
-    <div class="tune-row"><label for="tuneThrottleExpo">Throttle Expo</label><input id="tuneThrottleExpo" type="range" min="0.2" max="4" step="0.05"><span class="tune-val" id="tuneThrottleExpoVal">1.00</span></div>
-    <div class="tune-row"><label for="tuneTurnExpo">Turn Expo</label><input id="tuneTurnExpo" type="range" min="0.2" max="4" step="0.05"><span class="tune-val" id="tuneTurnExpoVal">1.00</span></div>
-
-    <div class="tune-group-title">Acceleration Ramp</div>
-    <div class="tune-row"><label for="tuneAccelUp">Accel Up (/s)</label><input id="tuneAccelUp" type="range" min="0.05" max="20" step="0.05"><span class="tune-val" id="tuneAccelUpVal">3.00</span></div>
-    <div class="tune-row"><label for="tuneAccelDown">Accel Down (/s)</label><input id="tuneAccelDown" type="range" min="0.05" max="30" step="0.05"><span class="tune-val" id="tuneAccelDownVal">5.00</span></div>
+    <div style="font-size:12px;color:var(--text-dim)">Simple motor tuning. Adjust, then Apply.</div>
 
     <div class="tune-group-title">Motor Direction</div>
     <div class="tune-row"><label for="tuneInvertLeft">Invert Left Motor</label><input id="tuneInvertLeft" type="checkbox"></div>
     <div class="tune-row"><label for="tuneInvertRight">Invert Right Motor</label><input id="tuneInvertRight" type="checkbox"></div>
+
+    <div class="tune-group-title">PWM Output</div>
+    <div class="tune-row"><label for="tuneMaxPwm">Max PWM (ceiling)</label><input id="tuneMaxPwm" type="range" min="0" max="255" step="1"><span class="tune-val" id="tuneMaxPwmVal">255</span></div>
+    <div class="tune-row"><label for="tuneMinPwm">Start PWM (floor)</label><input id="tuneMinPwm" type="range" min="0" max="255" step="1"><span class="tune-val" id="tuneMinPwmVal">0</span></div>
+
+    <div class="tune-group-title">Acceleration Ramp</div>
+    <div class="tune-row"><label for="tuneRampSec">Ramp Time (sec)</label><input id="tuneRampSec" type="range" min="0.1" max="10" step="0.1"><span class="tune-val" id="tuneRampSecVal">1.0</span></div>
+    <div style="margin:8px 0 4px 0;font-size:11px;color:var(--text-dim)">Ramp preview:</div>
+    <canvas id="tuneRampCanvas" width="400" height="60" style="width:100%;height:60px;border:1px solid var(--border);border-radius:4px;background:var(--bg)"></canvas>
 
     <div class="tune-group-title">Camera Roles</div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0 10px 0">
@@ -582,13 +578,9 @@ const defaultKeybinds = {
 let keybinds = { ...defaultKeybinds };
 let capturingAction = null;
 const driveTuneDefault = {
-  max_fwd: 0.60,
-  max_rev: 0.45,
-  max_turn: 0.50,
-  throttle_expo: 1.40,
-  turn_expo: 1.55,
-  accel_up_per_s: 1.20,
-  accel_down_per_s: 2.20,
+  max_pwm: 255,
+  min_pwm: 0,
+  ramp_sec: 1.0,
   invert_left: false,
   invert_right: false
 };
@@ -616,13 +608,9 @@ function tuneToBool(v, fallback = false) {
 function tuneNormalize(raw) {
   const src = raw || {};
   return {
-    max_fwd: tuneClamp(Number(src.max_fwd ?? driveTune.max_fwd), 0, 1),
-    max_rev: tuneClamp(Number(src.max_rev ?? driveTune.max_rev), 0, 1),
-    max_turn: tuneClamp(Number(src.max_turn ?? driveTune.max_turn), 0, 1),
-    throttle_expo: tuneClamp(Number(src.throttle_expo ?? driveTune.throttle_expo), 0.2, 4),
-    turn_expo: tuneClamp(Number(src.turn_expo ?? driveTune.turn_expo), 0.2, 4),
-    accel_up_per_s: tuneClamp(Number(src.accel_up_per_s ?? driveTune.accel_up_per_s), 0.05, 20),
-    accel_down_per_s: tuneClamp(Number(src.accel_down_per_s ?? driveTune.accel_down_per_s), 0.05, 30),
+    max_pwm: tuneClamp(Math.round(Number(src.max_pwm ?? driveTune.max_pwm)), 0, 255),
+    min_pwm: tuneClamp(Math.round(Number(src.min_pwm ?? driveTune.min_pwm)), 0, 255),
+    ramp_sec: tuneClamp(Number(src.ramp_sec ?? driveTune.ramp_sec), 0.1, 10),
     invert_left: tuneToBool(src.invert_left, driveTune.invert_left),
     invert_right: tuneToBool(src.invert_right, driveTune.invert_right)
   };
@@ -640,30 +628,23 @@ function bindTuneSlider(inputId, valueId, digits = 2) {
 }
 
 function applyTuneToInputs(tune) {
-  $('tuneMaxFwd').value = tune.max_fwd;
-  $('tuneMaxRev').value = tune.max_rev;
-  $('tuneMaxTurn').value = tune.max_turn;
-  $('tuneThrottleExpo').value = tune.throttle_expo;
-  $('tuneTurnExpo').value = tune.turn_expo;
-  $('tuneAccelUp').value = tune.accel_up_per_s;
-  $('tuneAccelDown').value = tune.accel_down_per_s;
+  $('tuneMaxPwm').value = tune.max_pwm;
+  $('tuneMinPwm').value = tune.min_pwm;
+  $('tuneRampSec').value = tune.ramp_sec;
   $('tuneInvertLeft').checked = !!tune.invert_left;
   $('tuneInvertRight').checked = !!tune.invert_right;
-  ['tuneMaxFwd','tuneMaxRev','tuneMaxTurn','tuneThrottleExpo','tuneTurnExpo','tuneAccelUp','tuneAccelDown'].forEach(id => {
+  ['tuneMaxPwm','tuneMinPwm','tuneRampSec'].forEach(id => {
     const el = $(id);
     if (el) el.dispatchEvent(new Event('input'));
   });
+  drawRampPreview();
 }
 
 function collectTuneFromInputs() {
   return tuneNormalize({
-    max_fwd: $('tuneMaxFwd').value,
-    max_rev: $('tuneMaxRev').value,
-    max_turn: $('tuneMaxTurn').value,
-    throttle_expo: $('tuneThrottleExpo').value,
-    turn_expo: $('tuneTurnExpo').value,
-    accel_up_per_s: $('tuneAccelUp').value,
-    accel_down_per_s: $('tuneAccelDown').value,
+    max_pwm: $('tuneMaxPwm').value,
+    min_pwm: $('tuneMinPwm').value,
+    ramp_sec: $('tuneRampSec').value,
     invert_left: $('tuneInvertLeft').checked,
     invert_right: $('tuneInvertRight').checked
   });
@@ -679,10 +660,71 @@ function closeTuneDialog() {
   $('tune-dialog').classList.add('hidden');
 }
 
+function drawRampPreview() {
+  const canvas = $('tuneRampCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const minPwm = parseInt($('tuneMinPwm').value) || 0;
+  const maxPwm = parseInt($('tuneMaxPwm').value) || 255;
+  const rampSec = parseFloat($('tuneRampSec').value) || 1.0;
+
+  const pad = 10;
+  const gw = w - pad * 2;
+  const gh = h - pad * 2;
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad, pad); ctx.lineTo(pad, h - pad); ctx.lineTo(w - pad, h - pad);
+  ctx.stroke();
+
+  // Labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(maxPwm.toString(), pad + 2, pad + 10);
+  ctx.fillText(minPwm.toString(), pad + 2, h - pad - (minPwm / 255) * gh - 2 || h - pad - 4);
+  ctx.textAlign = 'right';
+  ctx.fillText(rampSec.toFixed(1) + 's', w - pad, h - pad - 2);
+
+  // Min PWM dashed line
+  const minY = h - pad - (minPwm / 255) * gh;
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = '#d29922';
+  ctx.beginPath();
+  ctx.moveTo(pad, minY); ctx.lineTo(w - pad, minY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Max PWM line
+  const maxY = h - pad - (maxPwm / 255) * gh;
+  ctx.strokeStyle = '#58a6ff';
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(pad, maxY); ctx.lineTo(w - pad, maxY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Ramp line: starts at minPwm, ramps to maxPwm over rampSec
+  ctx.strokeStyle = '#3fb950';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  // 0 → start point at minPwm
+  ctx.moveTo(pad, minY);
+  // linear to maxPwm at rampSec
+  const rampX = pad + gw; // full width = rampSec
+  ctx.lineTo(rampX, maxY);
+  ctx.stroke();
+}
+
 function applyTune(persist = false) {
   driveTune = collectTuneFromInputs();
   sendJson({ type: persist ? 'drive_tune_save' : 'drive_tune', ...driveTune });
-  addLog(`${persist ? 'Drive tune save' : 'Drive tune apply'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}`);
+  addLog(`${persist ? 'Tune save' : 'Tune apply'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}`);
 }
 
 function loadCameraMap() {
@@ -1117,14 +1159,15 @@ function initPanelPrefs() {
     if (e.target.id === 'keybind-dialog') closeKeybinds();
   });
 
-  bindTuneSlider('tuneMaxFwd', 'tuneMaxFwdVal', 2);
-  bindTuneSlider('tuneMaxRev', 'tuneMaxRevVal', 2);
-  bindTuneSlider('tuneMaxTurn', 'tuneMaxTurnVal', 2);
-  bindTuneSlider('tuneThrottleExpo', 'tuneThrottleExpoVal', 2);
-  bindTuneSlider('tuneTurnExpo', 'tuneTurnExpoVal', 2);
-  bindTuneSlider('tuneAccelUp', 'tuneAccelUpVal', 2);
-  bindTuneSlider('tuneAccelDown', 'tuneAccelDownVal', 2);
+  bindTuneSlider('tuneMaxPwm', 'tuneMaxPwmVal', 0);
+  bindTuneSlider('tuneMinPwm', 'tuneMinPwmVal', 0);
+  bindTuneSlider('tuneRampSec', 'tuneRampSecVal', 1);
   applyTuneToInputs(driveTune);
+  // Redraw ramp preview when any slider changes
+  ['tuneMaxPwm','tuneMinPwm','tuneRampSec'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('input', drawRampPreview);
+  });
   const swapBtn = $('btnTuneSwapCams');
   if (swapBtn) swapBtn.addEventListener('click', swapCameraRoles);
   $('btnTuneApply').addEventListener('click', applyTune);
@@ -1271,7 +1314,7 @@ function handleMessage(raw) {
       if (!$('tune-dialog').classList.contains('hidden')) applyTuneToInputs(driveTune);
       const detail = msg.detail || '';
       const saved = !!msg.saved;
-      addLog(`Drive tune ${saved ? 'saved' : 'active'} fwd=${driveTune.max_fwd.toFixed(2)} rev=${driveTune.max_rev.toFixed(2)} turn=${driveTune.max_turn.toFixed(2)} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}${detail ? ` (${detail})` : ''}`);
+      addLog(`Tune ${saved ? 'saved' : 'active'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}${detail ? ` (${detail})` : ''}`);
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }
@@ -1437,24 +1480,19 @@ class Joystick {
 // ---- Instantiate joysticks ----
 let leftY = 0, rightX = 0;
 const joyL = new Joystick($('joyLeft'),  (x, y) => { leftY = y;  sendDrive(); });
-const joyR = new Joystick($('joyRight'), (x, y) => { rightX = x; sendDrive(); });
+const joyR = new Joystick($('joyRight'), (x, y) => { sendDrive(); });
 
 // ---- Drive command throttle (max 30 Hz) ----
 let driveInterval = null;
 let lastDriveJson = '';
 function sendDrive() {
   const fwd = Math.abs(leftY)  < 0.04 ? 0 : leftY;
-  const rot = Math.abs(rightX) < 0.04 ? 0 : rightX;
-  const json = JSON.stringify({ type: 'drive', x: 0, y: parseFloat(fwd.toFixed(3)), rot: parseFloat(rot.toFixed(3)) });
+  const json = JSON.stringify({ type: 'drive', x: 0, y: parseFloat(fwd.toFixed(3)), rot: 0 });
   if (json === lastDriveJson) return; // dedupe
   lastDriveJson = json;
   $('tvThrottle').textContent = fwd.toFixed(2);
-  $('tvRot').textContent = rot.toFixed(2);
-  // Tank mixing preview
-  const l = Math.max(-1, Math.min(1, fwd + rot));
-  const r = Math.max(-1, Math.min(1, fwd - rot));
-  $('tvDriveL').textContent = l.toFixed(2);
-  $('tvDriveR').textContent = r.toFixed(2);
+  $('tvDriveL').textContent = fwd.toFixed(2);
+  $('tvDriveR').textContent = fwd.toFixed(2);
 }
 
 // Send drive at fixed interval
@@ -1500,9 +1538,8 @@ function updateKeyDrive() {
   };
   if (pressed('forward') || keysDown.has('ArrowUp'))    y += 1;
   if (pressed('backward') || keysDown.has('ArrowDown'))  y -= 1;
-  if (pressed('left') || keysDown.has('ArrowLeft'))      r -= 0.6;
-  if (pressed('right') || keysDown.has('ArrowRight'))    r += 0.6;
-  leftY = y; rightX = r;
+  // Turn keys ignored — car chassis (no tank steering)
+  leftY = y; rightX = 0;
   sendDrive();
 }
 
@@ -1519,12 +1556,11 @@ function pollGamepad() {
   $('gamepadIcon').classList.toggle('active', !!gp);
   if (!gp) { requestAnimationFrame(pollGamepad); return; }
 
-  // Standard mapping: left stick Y = axis 1, right stick X = axis 2
+  // Standard mapping: left stick Y = axis 1
   const rawY = -gp.axes[1]; // invert so push-forward = positive
-  const rawR = gp.axes[2] || gp.axes[0]; // right stick X, fallback to left X
   const deadzone = 0.08;
   leftY  = Math.abs(rawY) < deadzone ? 0 : rawY;
-  rightX = Math.abs(rawR) < deadzone ? 0 : rawR;
+  rightX = 0; // Turn ignored — car chassis
   sendDrive();
 
   // Buttons: B = estop

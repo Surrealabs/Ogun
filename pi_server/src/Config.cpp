@@ -43,13 +43,14 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "teensy_vbat_div_ratio") cfg.teensy_vbat_div_ratio = std::stof(val);
         else if (key == "teensy_curr_zero_mv") cfg.teensy_curr_zero_mv = std::stof(val);
         else if (key == "teensy_curr_sens_mv_per_a") cfg.teensy_curr_sens_mv_per_a = std::stof(val);
-        else if (key == "teensy_drive_max_fwd") cfg.teensy_drive_max_fwd = std::stof(val);
-        else if (key == "teensy_drive_max_rev") cfg.teensy_drive_max_rev = std::stof(val);
-        else if (key == "teensy_turn_max") cfg.teensy_turn_max = std::stof(val);
-        else if (key == "teensy_throttle_expo") cfg.teensy_throttle_expo = std::stof(val);
-        else if (key == "teensy_turn_expo") cfg.teensy_turn_expo = std::stof(val);
-        else if (key == "teensy_accel_up_per_s") cfg.teensy_accel_up_per_s = std::stof(val);
-        else if (key == "teensy_accel_down_per_s") cfg.teensy_accel_down_per_s = std::stof(val);
+        else if (key == "teensy_max_pwm") cfg.teensy_max_pwm = std::stoi(val);
+        else if (key == "teensy_min_pwm") cfg.teensy_min_pwm = std::stoi(val);
+        else if (key == "teensy_ramp_sec") cfg.teensy_ramp_sec = std::stof(val);
+        // Legacy keys — silently accepted but ignored
+        else if (key == "teensy_drive_max_fwd" || key == "teensy_drive_max_rev" ||
+                 key == "teensy_turn_max" || key == "teensy_throttle_expo" ||
+                 key == "teensy_turn_expo" || key == "teensy_accel_up_per_s" ||
+                 key == "teensy_accel_down_per_s") {}
         else if (key == "invert_left_motor") cfg.invert_left_motor = (val == "1" || val == "true" || val == "yes");
         else if (key == "invert_right_motor") cfg.invert_right_motor = (val == "1" || val == "true" || val == "yes");
         else if (key == "teensy_watchdog_ms") cfg.teensy_watchdog_ms = std::stoi(val);

@@ -41,13 +41,9 @@ struct RuntimeConfig {
     uint32_t watchdogMs{fwcfg::WATCHDOG_MS};
     uint32_t telemIntervalMs{fwcfg::TELEM_INTERVAL_MS};
     MotorTuning motorTuning{
-        fwcfg::DRIVE_MAX_FWD,
-        fwcfg::DRIVE_MAX_REV,
-        fwcfg::TURN_MAX,
-        fwcfg::THROTTLE_EXPO,
-        fwcfg::TURN_EXPO,
-        fwcfg::ACCEL_UP_PER_S,
-        fwcfg::ACCEL_DOWN_PER_S
+        fwcfg::MAX_PWM,
+        fwcfg::MIN_PWM,
+        fwcfg::RAMP_SEC
     };
     float lowVoltageCutoff{fwcfg::LOW_VOLTAGE_CUTOFF};
     float lowVoltageResume{fwcfg::LOW_VOLTAGE_RESUME};
@@ -145,7 +141,7 @@ static void applyRuntimeConfig(const RuntimeConfig& cfg) {
 }
 
 static void emitConfig() {
-    char buf[512];
+    char buf[500];
     snprintf(buf, sizeof(buf),
         "{\"type\":\"fw_cfg\","
         "\"l_rpwm\":%u,\"l_lpwm\":%u,\"l_en\":%u,"
@@ -154,9 +150,8 @@ static void emitConfig() {
         "\"vbat_adc\":%u,\"curr_l_adc\":%u,\"curr_r_adc\":%u,\"temp_adc\":%u,"
         "\"vbat_div\":%.3f,\"curr_zero_mv\":%.1f,\"curr_sens_mv_per_a\":%.1f,"
         "\"watchdog_ms\":%lu,\"telem_ms\":%lu,"
-        "\"drive_max_fwd\":%.3f,\"drive_max_rev\":%.3f,\"turn_max\":%.3f,"
-        "\"throttle_expo\":%.3f,\"turn_expo\":%.3f,"
-        "\"accel_up_per_s\":%.3f,\"accel_down_per_s\":%.3f,"
+        "\"max_pwm\":%u,\"min_pwm\":%u,\"ramp_sec\":%.3f,"
+        "\"invert_left\":%d,\"invert_right\":%d,"
         "\"low_volt_cutoff\":%.2f,\"low_volt_resume\":%.2f,"
         "\"input_deadband\":%.3f,\"require_arm\":%s,"
         "\"armed\":%s,\"estopped\":%s,\"low_volt_latch\":%s,"
@@ -167,9 +162,8 @@ static void emitConfig() {
         gCfg.sensor.vbatAdcPin, gCfg.sensor.currLAdcPin, gCfg.sensor.currRAdcPin, gCfg.sensor.tempAdcPin,
         gCfg.sensor.vbatDivRatio, gCfg.sensor.currZeroMv, gCfg.sensor.currSensMvPerA,
         (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs,
-        gCfg.motorTuning.maxForward, gCfg.motorTuning.maxReverse, gCfg.motorTuning.maxTurn,
-        gCfg.motorTuning.throttleExpo, gCfg.motorTuning.turnExpo,
-        gCfg.motorTuning.accelUpPerSec, gCfg.motorTuning.accelDownPerSec,
+        gCfg.motorTuning.maxPwm, gCfg.motorTuning.minPwm, gCfg.motorTuning.rampSec,
+        (int)gCfg.motorTuning.invertLeft, (int)gCfg.motorTuning.invertRight,
         gCfg.lowVoltageCutoff, gCfg.lowVoltageResume,
         gCfg.inputDeadband, gCfg.requireArm ? "true" : "false",
         armed ? "true" : "false", estopped ? "true" : "false",
@@ -277,13 +271,20 @@ void processCommand(const char* line) {
         if (jsonTryGetInt(line, "\"watchdog_ms\"", &vi) && vi >= 0) cfg.watchdogMs = (uint32_t)vi;
         if (jsonTryGetInt(line, "\"telem_ms\"", &vi) && vi >= 0) cfg.telemIntervalMs = (uint32_t)vi;
 
-        if (jsonTryGetFloat(line, "\"drive_max_fwd\"", &vf)) cfg.motorTuning.maxForward = clampFloat(vf, 0.0f, 1.0f);
-        if (jsonTryGetFloat(line, "\"drive_max_rev\"", &vf)) cfg.motorTuning.maxReverse = clampFloat(vf, 0.0f, 1.0f);
-        if (jsonTryGetFloat(line, "\"turn_max\"", &vf)) cfg.motorTuning.maxTurn = clampFloat(vf, 0.0f, 1.0f);
-        if (jsonTryGetFloat(line, "\"throttle_expo\"", &vf)) cfg.motorTuning.throttleExpo = clampFloat(vf, 0.2f, 4.0f);
-        if (jsonTryGetFloat(line, "\"turn_expo\"", &vf)) cfg.motorTuning.turnExpo = clampFloat(vf, 0.2f, 4.0f);
-        if (jsonTryGetFloat(line, "\"accel_up_per_s\"", &vf)) cfg.motorTuning.accelUpPerSec = clampFloat(vf, 0.05f, 20.0f);
-        if (jsonTryGetFloat(line, "\"accel_down_per_s\"", &vf)) cfg.motorTuning.accelDownPerSec = clampFloat(vf, 0.05f, 30.0f);
+        if (jsonTryGetFloat(line, "\"drive_max_fwd\"", &vf)) {} // legacy — ignored
+        if (jsonTryGetFloat(line, "\"drive_max_rev\"", &vf)) {} // legacy — ignored
+        if (jsonTryGetFloat(line, "\"turn_max\"", &vf)) {} // legacy — ignored
+        if (jsonTryGetFloat(line, "\"throttle_expo\"", &vf)) {} // legacy — ignored
+        if (jsonTryGetFloat(line, "\"turn_expo\"", &vf)) {} // legacy — ignored
+        if (jsonTryGetFloat(line, "\"accel_up_per_s\"", &vf)) {} // legacy — ignored
+        if (jsonTryGetFloat(line, "\"accel_down_per_s\"", &vf)) {} // legacy — ignored
+
+        if (jsonTryGetInt(line, "\"max_pwm\"", &vi)) cfg.motorTuning.maxPwm = (uint8_t)constrain(vi, 0, 255);
+        if (jsonTryGetInt(line, "\"min_pwm\"", &vi)) cfg.motorTuning.minPwm = (uint8_t)constrain(vi, 0, 255);
+        if (jsonTryGetFloat(line, "\"ramp_sec\"", &vf)) cfg.motorTuning.rampSec = clampFloat(vf, 0.05f, 30.0f);
+
+        if (jsonTryGetInt(line, "\"invert_left\"", &vi)) cfg.motorTuning.invertLeft = (vi != 0);
+        if (jsonTryGetInt(line, "\"invert_right\"", &vi)) cfg.motorTuning.invertRight = (vi != 0);
 
         if (jsonTryGetFloat(line, "\"low_volt_cutoff\"", &vf)) cfg.lowVoltageCutoff = clampFloat(vf, 0.0f, 30.0f);
         if (jsonTryGetFloat(line, "\"low_volt_resume\"", &vf)) cfg.lowVoltageResume = clampFloat(vf, 0.0f, 30.0f);

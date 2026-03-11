@@ -20,6 +20,7 @@
 #include <vector>
 #include <cctype>
 #include <cstdio>
+#include <algorithm>
 // Simple JSON helpers (no dependency)
 #include <map>
 
@@ -110,13 +111,9 @@ static std::string updateStateJson(const std::string& status, const std::string&
 }
 
 static bool saveDriveTuneConfigFile(const std::string& path,
-                                    float maxFwd,
-                                    float maxRev,
-                                    float maxTurn,
-                                    float throttleExpo,
-                                    float turnExpo,
-                                    float accelUp,
-                                    float accelDown,
+                                    int maxPwm,
+                                    int minPwm,
+                                    float rampSec,
                                     bool invertLeft,
                                     bool invertRight,
                                     std::string* err)
@@ -127,30 +124,32 @@ static bool saveDriveTuneConfigFile(const std::string& path,
         if (a == std::string::npos) return std::string();
         return s.substr(a, b - a + 1);
     };
-    auto fmt = [](float v) {
+    auto keyIntLine = [&](const std::string& key, int value) {
+        return key + " = " + std::to_string(value);
+    };
+    auto keyFloatLine = [&](const std::string& key, float value) {
         std::ostringstream ss;
         ss.setf(std::ios::fixed);
         ss.precision(2);
-        ss << v;
-        return ss.str();
-    };
-    auto keyLine = [&](const std::string& key, float value) {
-        return key + " = " + fmt(value);
+        ss << value;
+        return key + " = " + ss.str();
     };
     auto keyBoolLine = [&](const std::string& key, bool value) {
         return key + " = " + (value ? "true" : "false");
     };
 
     std::vector<std::pair<std::string, std::string>> entries = {
-        {"teensy_drive_max_fwd", keyLine("teensy_drive_max_fwd", maxFwd)},
-        {"teensy_drive_max_rev", keyLine("teensy_drive_max_rev", maxRev)},
-        {"teensy_turn_max", keyLine("teensy_turn_max", maxTurn)},
-        {"teensy_throttle_expo", keyLine("teensy_throttle_expo", throttleExpo)},
-        {"teensy_turn_expo", keyLine("teensy_turn_expo", turnExpo)},
-        {"teensy_accel_up_per_s", keyLine("teensy_accel_up_per_s", accelUp)},
-        {"teensy_accel_down_per_s", keyLine("teensy_accel_down_per_s", accelDown)},
+        {"teensy_max_pwm", keyIntLine("teensy_max_pwm", maxPwm)},
+        {"teensy_min_pwm", keyIntLine("teensy_min_pwm", minPwm)},
+        {"teensy_ramp_sec", keyFloatLine("teensy_ramp_sec", rampSec)},
         {"invert_left_motor", keyBoolLine("invert_left_motor", invertLeft)},
         {"invert_right_motor", keyBoolLine("invert_right_motor", invertRight)}
+    };
+    // Remove legacy keys
+    std::vector<std::string> legacyKeys = {
+        "teensy_drive_max_fwd", "teensy_drive_max_rev", "teensy_turn_max",
+        "teensy_throttle_expo", "teensy_turn_expo",
+        "teensy_accel_up_per_s", "teensy_accel_down_per_s"
     };
 
     std::vector<std::string> lines;
@@ -180,6 +179,14 @@ static bool saveDriveTuneConfigFile(const std::string& path,
         }
         if (!replaced) lines.push_back(kv.second);
     }
+
+    // Strip legacy tuning keys
+    lines.erase(std::remove_if(lines.begin(), lines.end(), [&](const std::string& line) {
+        for (const auto& lk : legacyKeys) {
+            if (isKeyLine(line, lk)) return true;
+        }
+        return false;
+    }), lines.end());
 
     const std::string tmpPath = path + ".tmp";
     {
@@ -220,13 +227,11 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"vbat_div\":" << cfg.teensy_vbat_div_ratio << ","
        << "\"curr_zero_mv\":" << cfg.teensy_curr_zero_mv << ","
        << "\"curr_sens_mv_per_a\":" << cfg.teensy_curr_sens_mv_per_a << ","
-    << "\"drive_max_fwd\":" << cfg.teensy_drive_max_fwd << ","
-    << "\"drive_max_rev\":" << cfg.teensy_drive_max_rev << ","
-    << "\"turn_max\":" << cfg.teensy_turn_max << ","
-    << "\"throttle_expo\":" << cfg.teensy_throttle_expo << ","
-    << "\"turn_expo\":" << cfg.teensy_turn_expo << ","
-    << "\"accel_up_per_s\":" << cfg.teensy_accel_up_per_s << ","
-    << "\"accel_down_per_s\":" << cfg.teensy_accel_down_per_s << ","
+       << "\"max_pwm\":" << cfg.teensy_max_pwm << ","
+       << "\"min_pwm\":" << cfg.teensy_min_pwm << ","
+       << "\"ramp_sec\":" << cfg.teensy_ramp_sec << ","
+       << "\"invert_left\":" << (cfg.invert_left_motor ? 1 : 0) << ","
+       << "\"invert_right\":" << (cfg.invert_right_motor ? 1 : 0) << ","
        << "\"watchdog_ms\":" << cfg.teensy_watchdog_ms << ","
        << "\"telem_ms\":" << cfg.teensy_telem_interval_ms << ","
        << "\"input_deadband\":" << cfg.deadband << ","
@@ -325,16 +330,9 @@ static void dispatchCommand(const std::string& json,
     // --- Runtime drive tuning (optional persist to rover.conf) ---
     if (type == RoverCmd::DRIVE_TUNE || type == RoverCmd::DRIVE_TUNE_SAVE) {
         const bool persist = (type == RoverCmd::DRIVE_TUNE_SAVE);
-        auto clampf = [](float v, float lo, float hi) {
-            return std::max(lo, std::min(hi, v));
-        };
-        const float maxFwd = clampf(jsonFloat(json, "max_fwd"), 0.0f, 1.0f);
-        const float maxRev = clampf(jsonFloat(json, "max_rev"), 0.0f, 1.0f);
-        const float maxTurn = clampf(jsonFloat(json, "max_turn"), 0.0f, 1.0f);
-        const float throttleExpo = clampf(jsonFloat(json, "throttle_expo"), 0.2f, 4.0f);
-        const float turnExpo = clampf(jsonFloat(json, "turn_expo"), 0.2f, 4.0f);
-        const float accelUp = clampf(jsonFloat(json, "accel_up_per_s"), 0.05f, 20.0f);
-        const float accelDown = clampf(jsonFloat(json, "accel_down_per_s"), 0.05f, 30.0f);
+        const int maxPwm = std::max(0, std::min(255, jsonInt(json, "max_pwm")));
+        const int minPwm = std::max(0, std::min(255, jsonInt(json, "min_pwm")));
+        const float rampSec = std::max(0.05f, std::min(30.0f, jsonFloat(json, "ramp_sec")));
         bool currentInvertLeft = cfg.invert_left_motor;
         bool currentInvertRight = cfg.invert_right_motor;
         {
@@ -358,13 +356,11 @@ static void dispatchCommand(const std::string& json,
         std::ostringstream fw;
         fw << "{"
            << "\"cmd\":\"fw_cfg\"," 
-           << "\"drive_max_fwd\":" << maxFwd << ","
-           << "\"drive_max_rev\":" << maxRev << ","
-           << "\"turn_max\":" << maxTurn << ","
-           << "\"throttle_expo\":" << throttleExpo << ","
-           << "\"turn_expo\":" << turnExpo << ","
-           << "\"accel_up_per_s\":" << accelUp << ","
-           << "\"accel_down_per_s\":" << accelDown
+           << "\"max_pwm\":" << maxPwm << ","
+           << "\"min_pwm\":" << minPwm << ","
+           << "\"ramp_sec\":" << rampSec << ","
+           << "\"invert_left\":" << (invertLeft ? 1 : 0) << ","
+           << "\"invert_right\":" << (invertRight ? 1 : 0)
            << "}";
         teensy.sendRaw(fw.str());
 
@@ -373,7 +369,7 @@ static void dispatchCommand(const std::string& json,
         if (persist) {
             saved = saveDriveTuneConfigFile(
                 "/etc/rover/rover.conf",
-                maxFwd, maxRev, maxTurn, throttleExpo, turnExpo, accelUp, accelDown,
+                maxPwm, minPwm, rampSec,
                 invertLeft, invertRight,
                 &saveErr);
         }
@@ -390,13 +386,9 @@ static void dispatchCommand(const std::string& json,
             ack << "Applied runtime tuning";
         }
         ack << "\"," 
-            << "\"max_fwd\":" << maxFwd << ","
-            << "\"max_rev\":" << maxRev << ","
-            << "\"max_turn\":" << maxTurn << ","
-            << "\"throttle_expo\":" << throttleExpo << ","
-            << "\"turn_expo\":" << turnExpo << ","
-            << "\"accel_up_per_s\":" << accelUp << ","
-            << "\"accel_down_per_s\":" << accelDown << ","
+            << "\"max_pwm\":" << maxPwm << ","
+            << "\"min_pwm\":" << minPwm << ","
+            << "\"ramp_sec\":" << rampSec << ","
             << "\"invert_left\":" << (invertLeft ? "true" : "false") << ","
             << "\"invert_right\":" << (invertRight ? "true" : "false")
             << "}";
@@ -453,47 +445,26 @@ static void dispatchCommand(const std::string& json,
         }
         return;
     }
-    // --- Drive ---
+    // --- Drive (car-style: both motors get same throttle) ---
     if (type == RoverCmd::DRIVE) {
-        bool invertLeft = false;
-        bool invertRight = false;
         {
             std::lock_guard<std::mutex> ck(controlMtx);
             if (!control.started || control.estopLatched) {
                 teensy.sendStop();
                 return;
             }
-            invertLeft = control.invertLeftMotor;
-            invertRight = control.invertRightMotor;
         }
-        float x   = jsonFloat(json, "x");   // lateral (unused for tank)
-        float y   = jsonFloat(json, "y");   // forward/backward
-        float rot = jsonFloat(json, "rot"); // rotation
-        (void)x;
-
-        // Tank drive mixing
-        float left  = y + rot;
-        float right = y - rot;
+        float y = jsonFloat(json, "y");   // forward/backward throttle
 
         // Apply deadband
-        auto db = [&cfg](float v) {
-            return std::abs(v) < cfg.deadband ? 0.f : v;
-        };
-        left  = db(left);
-        right = db(right);
+        if (std::abs(y) < cfg.deadband) y = 0.f;
 
         // Cap to max speed
-        auto cap = [&cfg](float v) {
-            return std::max(-cfg.max_motor_speed,
-                            std::min(cfg.max_motor_speed, v));
-        };
-        left  = cap(left);
-        right = cap(right);
+        y = std::max(-cfg.max_motor_speed, std::min(cfg.max_motor_speed, y));
 
-        if (invertLeft) left = -left;
-        if (invertRight) right = -right;
-
-        teensy.sendDrive(left, right);
+        // Car chassis: both motors get identical throttle.
+        // Motor inversion handled by Teensy firmware.
+        teensy.sendDrive(y, y);
         return;
     }
     // --- GPIO (no pins wired yet — commands accepted but no-op) ---
