@@ -556,11 +556,15 @@ let lastTelem = {};
 let lastSendTime = 0;
 let servedFromRover = false; // true when page is served by the Pi's WebUI server
 
-// ---- EMA smoothing for telemetry display ----
-const EMA_ALPHA = 0.15;            // smoothing factor (lower = smoother)
-let emaCurrL = null;                // smoothed left current
-let emaCurrR = null;                // smoothed right current
-let emaLat   = null;                // smoothed latency
+// ---- Sliding-window average for telemetry display ----
+const SMOOTH_WIN = 10;  // samples (~5 s at 500 ms poll)
+function slidingAvg(buf, val) {
+  buf.push(val);
+  if (buf.length > SMOOTH_WIN) buf.shift();
+  let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i];
+  return s / buf.length;
+}
+let winCurrL = [], winCurrR = [], winLat = [];
 let editMode = false;
 let camerasEnabled = true;
 let roverSleeping = false;
@@ -1252,7 +1256,7 @@ function doConnect() {
     drivetrainStarted = false;
     estopLatched = false;
     precheckOk = !roverSleeping;
-    emaCurrL = null; emaCurrR = null; emaLat = null;
+    winCurrL.length = 0; winCurrR.length = 0; winLat.length = 0;
     connectDialog.classList.add('hidden');
     statusDot.classList.add('connected');
     statusText.textContent = 'Connected (' + roverIp + ')';
@@ -1296,23 +1300,17 @@ function handleMessage(raw) {
     const msg = JSON.parse(raw);
     if (msg.type === 'telemetry') {
       lastTelem = msg;
-      const rawL = msg.curr_l || 0;
-      const rawR = msg.curr_r || 0;
-      emaCurrL = emaCurrL === null ? rawL : emaCurrL + EMA_ALPHA * (rawL - emaCurrL);
-      emaCurrR = emaCurrR === null ? rawR : emaCurrR + EMA_ALPHA * (rawR - emaCurrR);
-      $('tvCurrL').textContent = emaCurrL.toFixed(2) + 'A';
-      $('tvCurrR').textContent = emaCurrR.toFixed(2) + 'A';
+      $('tvCurrL').textContent = slidingAvg(winCurrL, msg.curr_l || 0).toFixed(2) + 'A';
+      $('tvCurrR').textContent = slidingAvg(winCurrR, msg.curr_r || 0).toFixed(2) + 'A';
       $('tvEncL').textContent  = msg.enc_l || 0;
       $('tvEncR').textContent  = msg.enc_r || 0;
       drivetrainStarted = !!msg.started;
       estopLatched = !!msg.estop;
       precheckOk = (typeof msg.precheck_ok === 'boolean') ? msg.precheck_ok : (connected && !roverSleeping);
       updateIgnitionButton();
-      // latency estimate (if we sent a status req)
+      // latency: sliding-window average of recent round-trips
       if (lastSendTime) {
-        const rawLat = Date.now() - lastSendTime;
-        emaLat = emaLat === null ? rawLat : emaLat + EMA_ALPHA * (rawLat - emaLat);
-        $('tvLat').textContent = Math.round(emaLat) + 'ms';
+        $('tvLat').textContent = Math.round(slidingAvg(winLat, Date.now() - lastSendTime)) + 'ms';
       }
     } else if (msg.type === 'ota_prog') {
       $('ota-progress').value = msg.pct;
