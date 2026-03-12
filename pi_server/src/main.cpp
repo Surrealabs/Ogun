@@ -21,6 +21,7 @@
 #include <cctype>
 #include <cstdio>
 #include <algorithm>
+#include <systemd/sd-daemon.h>
 // Simple JSON helpers (no dependency)
 #include <map>
 
@@ -645,6 +646,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] Cameras:   http://<ip>:" << cfg.cam0_port
               << "  http://<ip>:" << cfg.cam1_port << "\n";
     std::cout << "[main] WebSocket: ws://<ip>:" << cfg.ws_port << "\n";
+    sd_notify(0, "READY=1");  // tell systemd we're up — start watchdog clock
 
     while (gRunning) {
         bool sleeping = false;
@@ -671,6 +673,7 @@ int main(int argc, char* argv[]) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(telPeriodMs));
+        sd_notify(0, "WATCHDOG=1");  // kick systemd watchdog
     }
 
     std::cout << "\n[main] Shutting down...\n";

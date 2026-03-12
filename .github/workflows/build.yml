@@ -74,7 +74,7 @@ jobs:
               apt-get update
               apt-get install -y --no-install-recommends \
                 build-essential cmake ninja-build pkg-config \
-                libgpiod-dev libjpeg-dev libssl-dev \
+                libgpiod-dev libjpeg-dev libssl-dev libsystemd-dev \
                 libudev-dev \
                 git ca-certificates
 

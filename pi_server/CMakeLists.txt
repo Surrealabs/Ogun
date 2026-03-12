@@ -11,6 +11,9 @@ find_package(PkgConfig REQUIRED)
 # libgpiod
 pkg_check_modules(GPIOD REQUIRED libgpiod)
 
+# libsystemd (watchdog notify)
+pkg_check_modules(SYSTEMD REQUIRED libsystemd)
+
 # libjpeg
 find_package(JPEG REQUIRED)
 
@@ -38,11 +41,13 @@ target_include_directories(rover_server PRIVATE
     src
     ${GPIOD_INCLUDE_DIRS}
     ${JPEG_INCLUDE_DIRS}
+    ${SYSTEMD_INCLUDE_DIRS}
 )
 
 target_link_libraries(rover_server PRIVATE
     ${GPIOD_LIBRARIES}
     ${JPEG_LIBRARIES}
+    ${SYSTEMD_LIBRARIES}
     OpenSSL::SSL
     OpenSSL::Crypto
     Threads::Threads
