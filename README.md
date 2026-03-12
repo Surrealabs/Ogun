@@ -466,3 +466,48 @@ WS commands: `{"type":"lights","headlights":true}`, `{"type":"lights_status"}`
 
 ### Teensy (PlatformIO)
 - `paulstoffregen/Encoder`
+
+---
+
+## Planned Features
+
+Upcoming work, roughly in priority order. Each will be implemented as a
+drop-in module or core enhancement.
+
+### GPS Telemetry (`mod_gps`)
+- USB or UART GPS module (e.g. u-blox NEO-6M/M8N)
+- Parse NMEA sentences, broadcast lat/lon/speed/heading in telemetry
+- WebUI map overlay (Leaflet.js or similar) with live position pin
+- Optional geofence — auto-ESTOP if rover leaves a bounding box
+
+### Bluetooth Control (`mod_ble_control`)
+- BLE GATT control channel (UUIDs already defined in Protocol.hpp)
+- Allow driving via BLE gamepad or phone app without WiFi
+- Dual-transport: BLE and WiFi commands feed the same dispatcher
+- Range fallback: BLE takes over when WiFi drops
+
+### Broadband / Low-Bandwidth Cellular Support
+- WebRTC or adaptive-bitrate MJPEG for control over LTE/5G
+- Compressed command channel (binary protocol or CBOR over WebSocket)
+- Latency-aware drive — auto-reduce max speed when round-trip exceeds threshold
+- Optional TURN/STUN relay for NAT traversal (drive from anywhere)
+
+### Mirror / Pan-Tilt Cameras (`mod_servo_mirror`)
+- Servo-driven pan/tilt mount for one or both cameras
+- WS commands: `{"type":"mirror","pan":90,"tilt":45}`
+- WebUI slider or drag-to-look control
+- Preset positions (forward, left-check, right-check, rear)
+
+### Sound Effects (`mod_audio`)
+- Trigger WAV/MP3 playback from WebUI buttons or module commands
+- Configurable sound bank in `/opt/rover/sounds/`
+- Horn, engine idle, reverse beep, custom clips
+- Volume control via WS command
+
+### Enhanced Web UI
+- Dark/light theme toggle
+- Resizable camera feeds with drag-to-swap
+- Telemetry graphs (voltage, current, temperature over time)
+- Module-contributed UI panels — modules can register HTML fragments
+- Mobile-optimized layout (single-column, larger touch targets)
+- Connection quality indicator (latency bar + signal strength)
