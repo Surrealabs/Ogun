@@ -69,6 +69,8 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "teensy_mmcu") cfg.teensy_mmcu = val;
         else if (key == "webui_port") cfg.webui_port = std::stoul(val);
         else if (key == "webui_dir")  cfg.webui_dir = val;
+        else if (key == "webui_user") cfg.webui_user = val;
+        else if (key == "webui_pass") cfg.webui_pass = val;
         else {
             std::cerr << "[config] unknown key: " << key << "\n";
         }

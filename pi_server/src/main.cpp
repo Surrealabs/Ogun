@@ -583,6 +583,7 @@ int main(int argc, char* argv[]) {
 
     // ---- Web UI server (HTTP + WebSocket on :8080) --------
     WebUiServer webui(cfg.webui_port, cfg.webui_dir);
+    webui.setCredentials(cfg.webui_user, cfg.webui_pass);
     WebUiServer* webuiPtr = &webui;
 
     // ---- Shared runtime state ----

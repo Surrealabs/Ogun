@@ -4,7 +4,7 @@ Quick resume notes for next remote session.
 
 ## Current version
 
-- `v0.11.0` on `main`
+- `v0.12.0` on `main`
 - Pushed to `origin/main` — CI should have built it
 
 ## What's new since last handoff
@@ -31,6 +31,16 @@ Quick resume notes for next remote session.
 - `dispatchCommand` returns bool; unhandled commands route to modules
 - Example `mod_lights` module (GPIO headlights/taillights)
 
+### v0.12.0 – WebUI authentication
+- Single-user login required for WebUI WebSocket control
+- Default credentials: user `Ogun`, password `Tayo1` (configurable in rover.conf)
+- Only one active session at a time; new login steals the session
+- Existing user gets real-time alert with "Regain Control" button
+- Re-authentication supported mid-session (reclaim without refresh)
+- Credentials saved in sessionStorage for auto-login on page reload
+- Config keys: `webui_user`, `webui_pass`
+- WifiServer (:9000) remains unauthenticated (Android app compatibility)
+
 ## Important behavior notes
 
 - Drivetrain is **disarmed by default** on startup.
@@ -41,14 +51,12 @@ Quick resume notes for next remote session.
 
 ## Files most recently touched
 
-- `pi_server/CMakeLists.txt` (module glob added)
-- `pi_server/src/main.cpp` (module integration, dispatchCommand returns bool)
-- `pi_server/src/module/` (new: RoverModule, ModuleRegistry, ModuleConf)
-- `pi_server/src/modules/mod_lights/` (new: example module)
-- `pi_server/modules/mod_lights.conf.example`
-- `pi_server/webui/index.html` (merged tune buttons)
-- `pi_server/src/webui/WebUiServer.hpp/.cpp` (tune caching)
-- `README.md`
+- `pi_server/src/Config.hpp` (added webui_user, webui_pass)
+- `pi_server/src/Config.cpp` (parse new auth config keys)
+- `pi_server/src/main.cpp` (wire credentials to WebUiServer)
+- `pi_server/src/webui/WebUiServer.hpp` (auth members, setCredentials)
+- `pi_server/src/webui/WebUiServer.cpp` (WS login gate, re-auth, jsonField)
+- `pi_server/webui/index.html` (login dialog, login_alert toast, session save)
 
 ## Suggested first commands next session
 

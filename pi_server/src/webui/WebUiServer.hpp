@@ -39,6 +39,9 @@ public:
     // Store the latest drive tune for new-client handshake
     void setLatestTune(const std::string& json);
 
+    // Set login credentials (from config)
+    void setCredentials(const std::string& user, const std::string& pass);
+
     void onMessage(MessageCb cb) { messageCb_ = std::move(cb); }
 
 private:
@@ -75,6 +78,14 @@ private:
     std::string        latestTune_;
 
     MessageCb          messageCb_;
+
+    // Authentication
+    std::mutex         authMtx_;
+    std::string        authUser_ = "Ogun";
+    std::string        authPass_ = "Tayo1";
+    int                authenticatedFd_{-1};
+
+    static std::string jsonField(const std::string& json, const std::string& key);
 
     // MIME type map
     static std::string mimeType(const std::string& path);

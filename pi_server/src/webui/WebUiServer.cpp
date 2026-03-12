@@ -41,6 +41,20 @@ std::string WebUiServer::mimeType(const std::string& path) {
     return "application/octet-stream";
 }
 
+// ---- Simple JSON string field extractor -------------------
+std::string WebUiServer::jsonField(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\"";
+    auto kp = json.find(needle);
+    if (kp == std::string::npos) return "";
+    auto cp = json.find(':', kp + needle.size());
+    if (cp == std::string::npos) return "";
+    auto vs = json.find('"', cp + 1);
+    if (vs == std::string::npos) return "";
+    auto ve = json.find('"', vs + 1);
+    if (ve == std::string::npos) return "";
+    return json.substr(vs + 1, ve - vs - 1);
+}
+
 // ---- Constructor / Destructor -----------------------------
 WebUiServer::WebUiServer(uint16_t port, const std::string& webuiDir)
     : port_(port), webuiDir_(webuiDir) {}
@@ -178,20 +192,85 @@ bool WebUiServer::tryWebSocketUpgrade(int fd, const std::string& req) {
 void WebUiServer::wsClientLoop(int fd) {
     { std::lock_guard<std::mutex> lk(wsMtx_); wsClients_.insert(fd); }
     std::cout << "[webui] browser WS connected\n";
-    // Send cached tune so UI populates immediately
+
+    // ---- Auth gate: first message must be login ----
+    bool authenticated = false;
     {
-        std::lock_guard<std::mutex> lk(tuneMtx_);
-        if (!latestTune_.empty()) {
-            auto frame = wsEncodeFrame(latestTune_);
-            send(fd, frame.data(), frame.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
+        std::string msg;
+        if (wsDecodeFrame(fd, msg)) {
+            if (jsonField(msg, "type") == "login" &&
+                jsonField(msg, "user") == authUser_ &&
+                jsonField(msg, "pass") == authPass_) {
+                // Notify existing session if another device is taking over
+                {
+                    std::lock_guard<std::mutex> lk(authMtx_);
+                    if (authenticatedFd_ >= 0 && authenticatedFd_ != fd) {
+                        auto alert = wsEncodeFrame(
+                            "{\"type\":\"login_alert\",\"msg\":\"Another device logged in\"}");
+                        send(authenticatedFd_, alert.data(), alert.size(),
+                             MSG_NOSIGNAL | MSG_DONTWAIT);
+                    }
+                    authenticatedFd_ = fd;
+                }
+                auto ok = wsEncodeFrame("{\"type\":\"login_ok\"}");
+                send(fd, ok.data(), ok.size(), MSG_NOSIGNAL);
+                std::cout << "[webui] user authenticated\n";
+                authenticated = true;
+            } else {
+                auto fail = wsEncodeFrame(
+                    "{\"type\":\"login_fail\",\"msg\":\"Invalid credentials\"}");
+                send(fd, fail.data(), fail.size(), MSG_NOSIGNAL);
+                std::cout << "[webui] login failed\n";
+            }
         }
     }
-    while (running_) {
-        std::string payload;
-        if (!wsDecodeFrame(fd, payload)) break;
-        if (messageCb_) messageCb_(payload);
+
+    if (authenticated) {
+        // Send cached tune so UI populates immediately
+        {
+            std::lock_guard<std::mutex> lk(tuneMtx_);
+            if (!latestTune_.empty()) {
+                auto frame = wsEncodeFrame(latestTune_);
+                send(fd, frame.data(), frame.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
+            }
+        }
+        while (running_) {
+            std::string payload;
+            if (!wsDecodeFrame(fd, payload)) break;
+
+            // Handle re-authentication (e.g. "Regain Control")
+            if (jsonField(payload, "type") == "login") {
+                if (jsonField(payload, "user") == authUser_ &&
+                    jsonField(payload, "pass") == authPass_) {
+                    std::lock_guard<std::mutex> lk(authMtx_);
+                    if (authenticatedFd_ >= 0 && authenticatedFd_ != fd) {
+                        auto alert = wsEncodeFrame(
+                            "{\"type\":\"login_alert\",\"msg\":\"Another device logged in\"}");
+                        send(authenticatedFd_, alert.data(), alert.size(),
+                             MSG_NOSIGNAL | MSG_DONTWAIT);
+                    }
+                    authenticatedFd_ = fd;
+                    auto ok = wsEncodeFrame("{\"type\":\"login_ok\"}");
+                    send(fd, ok.data(), ok.size(), MSG_NOSIGNAL);
+                }
+                continue;
+            }
+
+            // Only process commands from authenticated session
+            {
+                std::lock_guard<std::mutex> lk(authMtx_);
+                if (fd != authenticatedFd_) continue;
+            }
+            if (messageCb_) messageCb_(payload);
+        }
     }
+
+    // Cleanup
     std::cout << "[webui] browser WS disconnected\n";
+    {
+        std::lock_guard<std::mutex> lk(authMtx_);
+        if (authenticatedFd_ == fd) authenticatedFd_ = -1;
+    }
     ::close(fd);
     std::lock_guard<std::mutex> lk(wsMtx_);
     wsClients_.erase(fd);
@@ -281,4 +360,10 @@ void WebUiServer::setLatestStatus(const std::string& json) {
 void WebUiServer::setLatestTune(const std::string& json) {
     std::lock_guard<std::mutex> lk(tuneMtx_);
     latestTune_ = json;
+}
+
+void WebUiServer::setCredentials(const std::string& user, const std::string& pass) {
+    std::lock_guard<std::mutex> lk(authMtx_);
+    authUser_ = user;
+    authPass_ = pass;
 }
