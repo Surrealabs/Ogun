@@ -36,6 +36,9 @@ public:
     // Store the latest telemetry for /api/status polling
     void setLatestStatus(const std::string& json);
 
+    // Store the latest drive tune for new-client handshake
+    void setLatestTune(const std::string& json);
+
     void onMessage(MessageCb cb) { messageCb_ = std::move(cb); }
 
 private:
@@ -67,6 +70,9 @@ private:
 
     std::mutex         statusMtx_;
     std::string        latestStatus_;
+
+    std::mutex         tuneMtx_;
+    std::string        latestTune_;
 
     MessageCb          messageCb_;
 

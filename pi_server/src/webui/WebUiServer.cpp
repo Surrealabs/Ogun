@@ -178,6 +178,14 @@ bool WebUiServer::tryWebSocketUpgrade(int fd, const std::string& req) {
 void WebUiServer::wsClientLoop(int fd) {
     { std::lock_guard<std::mutex> lk(wsMtx_); wsClients_.insert(fd); }
     std::cout << "[webui] browser WS connected\n";
+    // Send cached tune so UI populates immediately
+    {
+        std::lock_guard<std::mutex> lk(tuneMtx_);
+        if (!latestTune_.empty()) {
+            auto frame = wsEncodeFrame(latestTune_);
+            send(fd, frame.data(), frame.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
+        }
+    }
     while (running_) {
         std::string payload;
         if (!wsDecodeFrame(fd, payload)) break;
@@ -268,4 +276,9 @@ void WebUiServer::broadcast(const std::string& json) {
 void WebUiServer::setLatestStatus(const std::string& json) {
     std::lock_guard<std::mutex> lk(statusMtx_);
     latestStatus_ = json;
+}
+
+void WebUiServer::setLatestTune(const std::string& json) {
+    std::lock_guard<std::mutex> lk(tuneMtx_);
+    latestTune_ = json;
 }

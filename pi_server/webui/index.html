@@ -505,8 +505,7 @@ canvas.joystick {
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn" id="btnTuneReset">Reset Safe</button>
-      <button class="btn accent" id="btnTuneApply">Apply</button>
-      <button class="btn" id="btnTuneSave">Save Persistent</button>
+      <button class="btn accent" id="btnTuneSave">Save</button>
       <button class="btn" id="btnTuneClose">Close</button>
     </div>
   </div>
@@ -1216,7 +1215,6 @@ function initPanelPrefs() {
   applyTuneToInputs(driveTune);
   const swapBtn = $('btnTuneSwapCams');
   if (swapBtn) swapBtn.addEventListener('click', swapCameraRoles);
-  $('btnTuneApply').addEventListener('click', applyTune);
   $('btnTuneSave').addEventListener('click', () => applyTune(true));
   $('btnTuneReset').addEventListener('click', () => applyTuneToInputs(driveTuneDefault));
   $('btnTuneClose').addEventListener('click', closeTuneDialog);

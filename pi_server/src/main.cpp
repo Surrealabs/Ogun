@@ -396,6 +396,7 @@ static void dispatchCommand(const std::string& json,
             << "\"invert_right\":" << (invertRight ? "true" : "false")
             << "}";
         broadcastAll(ws, webui, ack.str());
+        if (webui) webui->setLatestTune(ack.str());
         return;
     }
 
@@ -589,6 +590,20 @@ int main(int argc, char* argv[]) {
     std::mutex controlMtx;
     control.invertLeftMotor = cfg.invert_left_motor;
     control.invertRightMotor = cfg.invert_right_motor;
+
+    // ---- Seed initial tune so new WS clients get it immediately ----
+    {
+        std::ostringstream t;
+        t << "{\"type\":\"" << RoverStatus::DRIVE_TUNE << "\","
+          << "\"ok\":true,\"saved\":true,\"persist\":false,"
+          << "\"max_pwm\":" << cfg.teensy_max_pwm << ","
+          << "\"min_pwm\":" << cfg.teensy_min_pwm << ","
+          << "\"ramp_sec\":" << cfg.teensy_ramp_sec << ","
+          << "\"invert_left\":" << (cfg.invert_left_motor ? "true" : "false") << ","
+          << "\"invert_right\":" << (cfg.invert_right_motor ? "true" : "false")
+          << "}";
+        webui.setLatestTune(t.str());
+    }
 
     // ---- Wire up Teensy reconnect → re-push fw config + disarm ----
     teensy.onReconnect([&]() {
