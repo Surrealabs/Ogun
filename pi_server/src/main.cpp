@@ -6,6 +6,8 @@
 #include "camera/CameraStream.hpp"
 #include "gpio/GpioController.hpp"
 #include "ota/TeensyOta.hpp"
+#include "module/ModuleRegistry.hpp"
+#include "module/ModuleConf.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -248,7 +250,7 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
 class WebUiServer;
 static void broadcastAll(WifiServer& ws, WebUiServer* webui, const std::string& json);
 
-static void dispatchCommand(const std::string& json,
+static bool dispatchCommand(const std::string& json,
                             TeensyBridge& teensy,
                             GpioController& gpio,
                             TeensyOta& ota,
@@ -278,7 +280,7 @@ static void dispatchCommand(const std::string& json,
             power.camerasOn = false;
         }
         broadcastAll(ws, webui, powerStateJson(power));
-        return;
+        return true;
     }
 
     // --- Sleep / wake ---
@@ -297,7 +299,7 @@ static void dispatchCommand(const std::string& json,
             control.started = false;
         }
         broadcastAll(ws, webui, powerStateJson(power));
-        return;
+        return true;
     }
     if (type == RoverCmd::WAKE) {
         std::lock_guard<std::mutex> lk(powerMtx);
@@ -308,14 +310,14 @@ static void dispatchCommand(const std::string& json,
             power.camerasOn = true;
         }
         broadcastAll(ws, webui, powerStateJson(power));
-        return;
+        return true;
     }
 
     // --- Manual update check/apply (non-blocking) ---
     if (type == RoverCmd::UPDATE_CHECK) {
         if (gUpdateCheckBusy.exchange(true)) {
             broadcastAll(ws, webui, updateStateJson("busy", "Update check already running"));
-            return;
+            return true;
         }
         broadcastAll(ws, webui, updateStateJson("queued", "Starting rover-auto-update.service"));
         std::thread([&ws, webui]() {
@@ -327,7 +329,7 @@ static void dispatchCommand(const std::string& json,
             }
             gUpdateCheckBusy = false;
         }).detach();
-        return;
+        return true;
     }
 
     // --- Runtime drive tuning (optional persist to rover.conf) ---
@@ -397,14 +399,14 @@ static void dispatchCommand(const std::string& json,
             << "}";
         broadcastAll(ws, webui, ack.str());
         if (webui) webui->setLatestTune(ack.str());
-        return;
+        return true;
     }
 
     {
         std::lock_guard<std::mutex> lk(powerMtx);
         if (power.sleeping && type != RoverCmd::STATUS && type != RoverCmd::ESTOP && type != RoverCmd::DRIVE_TUNE && type != RoverCmd::DRIVE_TUNE_SAVE) {
             // Ignore normal action commands while sleeping.
-            return;
+            return true;
         }
     }
 
@@ -413,19 +415,19 @@ static void dispatchCommand(const std::string& json,
         const bool precheckOk = teensy.isOpen();
         if (!precheckOk) {
             broadcastAll(ws, webui, "{\"type\":\"error\",\"msg\":\"Pre-ignition check failed: Teensy offline\"}");
-            return;
+            return true;
         }
         {
             std::lock_guard<std::mutex> ck(controlMtx);
             if (control.estopLatched) {
                 broadcastAll(ws, webui, "{\"type\":\"error\",\"msg\":\"Clear E-Stop before starting\"}");
-                return;
+                return true;
             }
             control.started = true;
         }
         teensy.sendRaw("{\"cmd\":\"arm\"}");
         teensy.sendStop();
-        return;
+        return true;
     }
 
     // --- Clear E-STOP latch (stays disarmed until ignition_start) ---
@@ -439,7 +441,7 @@ static void dispatchCommand(const std::string& json,
         std::lock_guard<std::mutex> ck(controlMtx);
         control.estopLatched = false;
         control.started = false;
-        return;
+        return true;
     }
 
     // --- ESTOP (highest priority) ---
@@ -451,7 +453,7 @@ static void dispatchCommand(const std::string& json,
             control.estopLatched = true;
             control.started = false;
         }
-        return;
+        return true;
     }
     // --- Drive (car-style: both motors get same throttle) ---
     if (type == RoverCmd::DRIVE) {
@@ -459,7 +461,7 @@ static void dispatchCommand(const std::string& json,
             std::lock_guard<std::mutex> ck(controlMtx);
             if (!control.started || control.estopLatched) {
                 teensy.sendStop();
-                return;
+                return true;
             }
         }
         float y = jsonFloat(json, "y");   // forward/backward throttle
@@ -473,11 +475,11 @@ static void dispatchCommand(const std::string& json,
         // Car chassis: both motors get identical throttle.
         // Motor inversion handled by Teensy firmware.
         teensy.sendDrive(y, y);
-        return;
+        return true;
     }
     // --- GPIO (no pins wired yet — commands accepted but no-op) ---
     if (type == RoverCmd::GPIO) {
-        return;
+        return true;
     }
     // --- Audio ---
     if (type == RoverCmd::AUDIO) {
@@ -485,13 +487,13 @@ static void dispatchCommand(const std::string& json,
         // Use aplay for WAV or mpg123 for MP3
         std::string cmd = "aplay " + cfg.audio_dir + "/" + file + " &";
         std::system(cmd.c_str());
-        return;
+        return true;
     }
     // --- OTA begin ---
     if (type == "ota_begin") {
         int total = jsonInt(json, "total");
         ota.begin(total);
-        return;
+        return true;
     }
     // --- OTA chunk ---
     if (type == RoverCmd::OTA) {
@@ -511,12 +513,12 @@ static void dispatchCommand(const std::string& json,
                 });
             }
         }
-        return;
+        return true;
     }
     // --- Status request ---
     if (type == RoverCmd::STATUS) {
         teensy.requestSensors();
-        return;
+        return true;
     }
 
     // --- Reboot Pi ---
@@ -526,10 +528,10 @@ static void dispatchCommand(const std::string& json,
         teensy.sendRaw("{\"cmd\":\"disarm\"}");
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         std::system("sudo reboot");
-        return;
+        return true;
     }
 
-    std::cerr << "[main] unknown command type: " << type << "\n";
+    return false;  // not handled by core — let modules try
 }
 
 // ============================================================
@@ -605,6 +607,20 @@ int main(int argc, char* argv[]) {
         webui.setLatestTune(t.str());
     }
 
+    // ---- Load modules -----------------------------------------
+    auto modules = ModuleRegistry::createAll();
+    {
+        ModuleContext mctx;
+        mctx.broadcast = [&](const std::string& j) { broadcastAll(ws, webuiPtr, j); };
+        mctx.teensy = &teensy;
+        mctx.gpio   = &gpio;
+        for (auto& mod : modules) {
+            auto conf = loadModuleConf("/etc/rover/modules/" + std::string(mod->name()) + ".conf");
+            if (!mod->onLoad(conf, mctx))
+                std::cerr << "[modules] " << mod->name() << " failed to load\n";
+        }
+    }
+
     // ---- Wire up Teensy reconnect → re-push fw config + disarm ----
     teensy.onReconnect([&]() {
         if (cfg.teensy_push_fw_config) {
@@ -643,8 +659,15 @@ int main(int argc, char* argv[]) {
     // ---- Command handler shared by WiFi and WebUI ---
 
     auto cmdHandler = [&](const std::string& json) {
-        dispatchCommand(json, teensy, gpio, ota, ws, webuiPtr, cfg,
-                        cam0, cam1, power, powerMtx, control, controlMtx);
+        if (dispatchCommand(json, teensy, gpio, ota, ws, webuiPtr, cfg,
+                            cam0, cam1, power, powerMtx, control, controlMtx))
+            return;
+        // Let modules handle unrecognised commands
+        std::string type = jsonStr(json, "type");
+        for (auto& mod : modules) {
+            if (mod->onCommand(type, json)) return;
+        }
+        std::cerr << "[main] unknown command type: " << type << "\n";
     };
     ws.onMessage(cmdHandler);
     webui.onMessage(cmdHandler);
@@ -687,11 +710,13 @@ int main(int argc, char* argv[]) {
                 webui.setLatestStatus(json);
             }
         }
+        for (auto& mod : modules) mod->onTick();
         std::this_thread::sleep_for(std::chrono::milliseconds(telPeriodMs));
         sd_notify(0, "WATCHDOG=1");  // kick systemd watchdog
     }
 
     std::cout << "\n[main] Shutting down...\n";
+    for (auto& mod : modules) mod->onShutdown();
     teensy.sendStop();
     teensy.sendRaw("{\"cmd\":\"disarm\"}");
     ws.stop();

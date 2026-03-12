@@ -1,0 +1,10 @@
+# mod_lights — GPIO-driven headlights / taillights
+#
+# Copy to /etc/rover/modules/lights.conf and set your BCM pin numbers.
+# Leave a pin commented out to disable that output.
+
+# BCM pin for headlights relay / MOSFET
+# headlight_pin = 17
+
+# BCM pin for taillights relay / MOSFET
+# taillight_pin = 27

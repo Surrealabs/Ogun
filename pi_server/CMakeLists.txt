@@ -35,7 +35,16 @@ set(SOURCES
     src/ota/TeensyOta.cpp
 )
 
-add_executable(rover_server ${SOURCES})
+# ---- Module system ------------------------------------------
+set(MODULE_FRAMEWORK
+    src/module/ModuleRegistry.cpp
+    src/module/ModuleConf.cpp
+)
+
+# Auto-discover all modules under src/modules/*/
+file(GLOB_RECURSE MODULE_SOURCES src/modules/*/*.cpp)
+
+add_executable(rover_server ${SOURCES} ${MODULE_FRAMEWORK} ${MODULE_SOURCES})
 
 target_include_directories(rover_server PRIVATE
     src
@@ -69,6 +78,9 @@ install(FILES scripts/rover.conf.example
         OPTIONAL)
 install(DIRECTORY sounds/
         DESTINATION /opt/rover/sounds
+        OPTIONAL)
+install(DIRECTORY modules/
+        DESTINATION /etc/rover/modules
         OPTIONAL)
 
 # ---- Summary -----------------------------------------------
