@@ -1,4 +1,4 @@
-// Auto-registration for mod_lights (AzerothCore-style loader)
+// Auto-registration for mod_lights
 #include "module/ModuleRegistry.hpp"
 #include "modules/mod_lights/ModLights.hpp"
 

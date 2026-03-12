@@ -10,31 +10,33 @@ controlled from a **Web UI** over **WiFi/WebSocket**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Web UI (Browser)                            │
+│                     Web UI (Browser :8080)                      │
 │  ┌──────────────┐  ┌─────────────────────┐                     │
-│  │ WebSocket    │  │  Joystick +          │                     │
+│  │ WebSocket    │  │  Joystick + Tune +   │                     │
 │  │  Client      │  │  Camera MJPEG UI    │                     │
 │  └──────┬───────┘  └─────────────────────┘                     │
 └─────────┼───────────────────────────────────────────────────────┘
-             │ WebSocket (port 9000)
-             │ MJPEG   (port 8081 / 8082)
+             │ WebSocket (:9000 + :8080/ws)
+             │ MJPEG   (:8081 / :8082)
 ┌─────────┼───────────────────────────────────────────────────────┐
 │         │   BTT Pi 1.2                                          │
-│  ┌──────┴───────────────────┴──────────────────────────────┐   │
-│  │               rover_server (C++)                         │   │
+│  ┌──────┴──────────────────────────────────────────────────┐   │
+│  │               rover_server (C++20)                       │   │
 │  │  WifiServer  │  WebUiServer  │  CameraStream ×2          │   │
 │  │  (WebSocket) │  (HTTP + WS)  │  (V4L2 + MJPEG HTTP)      │   │
-│  │  GpioController (libgpiod)                                │   │
-│  │  TeensyOta (teensy_loader_cli)                            │   │
+│  │  GpioController (libgpiod)   │  TeensyOta (USB flash)     │   │
+│  │──────────────────────────────────────────────────────────│   │
+│  │  ModuleRegistry → loads src/modules/mod_*/               │   │
+│  │  Each module: own .conf, loader.cpp, lifecycle hooks      │   │
 │  └─────────────────────────────┬───────────────────────────┘   │
 │                                 │ USB Serial (115200 baud)       │
 └─────────────────────────────────┼───────────────────────────────┘
                                   │
                     ┌─────────────┴──────────────┐
-                    │       Teensy 4.1            │
-                    │  main.cpp (Arduino)          │
+                    │       Teensy 4.0            │
+                    │  main.cpp (PlatformIO)       │
                     │  MotorController (BTS7960)  │
-                    │  SensorHub (encoders, v/i)  │
+                    │  SensorHub (dual current)   │
                     └─────────────────────────────┘
                          |           |
                     BTS7960 L    BTS7960 R
@@ -69,37 +71,47 @@ Verification now runs in CI before build:
 ## Repository Layout
 
 ```
-rover/
-├── pi_server/              # C++ daemon for the BTT Pi
+Ogun/
+├── pi_server/                    # C++ daemon for the BTT Pi
 │   ├── CMakeLists.txt
+│   ├── modules/                  # .conf.example files for each module
+│   │   └── mod_lights.conf.example
 │   ├── src/
-│   │   ├── main.cpp        # Entry point + command dispatcher
-│   │   ├── Config.hpp/.cpp # /etc/rover/rover.conf loader
-│   │   ├── Protocol.hpp    # UUIDs, command strings, port numbers
-│   │   ├── wifi/           # WebSocket server (POSIX + OpenSSL)
-│   │   ├── webui/          # Embedded HTTP + WebSocket server
-│   │   ├── camera/         # V4L2 capture → MJPEG HTTP server
-│   │   ├── gpio/           # libgpiod output controller
-│   │   ├── serial/         # USB serial bridge to Teensy
-│   │   └── ota/            # Receive firmware chunks, flash Teensy
+│   │   ├── main.cpp              # Entry point + command dispatcher
+│   │   ├── Config.hpp/.cpp       # /etc/rover/rover.conf loader
+│   │   ├── Protocol.hpp          # Command strings, UUIDs, ports
+│   │   ├── module/               # Module framework
+│   │   │   ├── RoverModule.hpp   # Base class + ModuleContext
+│   │   │   ├── ModuleRegistry.*  # Static auto-registration
+│   │   │   └── ModuleConf.*      # Per-module .conf loader
+│   │   ├── modules/              # Drop-in modules (auto-discovered)
+│   │   │   └── mod_lights/       # Example: GPIO headlights/taillights
+│   │   │       ├── ModLights.hpp/.cpp
+│   │   │       └── mod_lights_loader.cpp
+│   │   ├── wifi/                 # WebSocket server (POSIX + OpenSSL)
+│   │   ├── webui/                # Embedded HTTP + WebSocket server
+│   │   ├── camera/               # V4L2 capture → MJPEG HTTP server
+│   │   ├── gpio/                 # libgpiod output controller
+│   │   ├── serial/               # USB serial bridge to Teensy
+│   │   └── ota/                  # Receive firmware chunks, flash Teensy
+│   ├── webui/
+│   │   └── index.html            # Single-page control UI
 │   └── scripts/
-│       ├── install.sh      # One-shot install + build script
-│       ├── rover.service   # systemd unit file
+│       ├── install.sh
+│       ├── rover.service         # systemd unit (Type=notify, watchdog)
 │       └── rover.conf.example
 │
-├── teensy_firmware/         # PlatformIO project (Teensy 4.1)
+├── teensy_firmware/               # PlatformIO project (Teensy 4.0)
 │   ├── platformio.ini
 │   └── src/
-│       ├── main.cpp         # Arduino loop + serial JSON protocol
-│       ├── MotorController.hpp  # BTS7960 dual H-bridge driver
-│       └── SensorHub.hpp    # Encoders + V/I/temp sensor aggregator
+│       ├── main.cpp               # Arduino loop + serial JSON protocol
+│       ├── FirmwareConfig.hpp     # Runtime pin/tuning config receiver
+│       ├── MotorController.hpp    # BTS7960 H-bridge (setTarget/tick/coast)
+│       └── SensorHub.hpp          # Dual current sense + telemetry
 │
-└── teensy_firmware/         # PlatformIO project (Teensy 4.1)
-    ├── platformio.ini
-    └── src/
-        ├── main.cpp         # Arduino loop + serial JSON protocol
-        ├── MotorController.hpp  # BTS7960 dual H-bridge driver
-        └── SensorHub.hpp    # Dual current sense + telemetry stub
+├── scripts/                       # Update, verify, auto-update scripts
+├── ogun                           # CLI tool for build/deploy/release
+└── VERSION                        # Single source of truth for version
 ```
 
 ---
@@ -270,32 +282,34 @@ Pi: /tmp/ogun-update.XXXXXX/
 
 ## Wiring Reference
 
-### BTS7960 → Teensy 4.1
+### BTS7960 → Teensy 4.0
 
 | BTS7960 Signal | Teensy Pin (Left) | Teensy Pin (Right) |
 |----------------|-------------------|--------------------|
-| RPWM           | 2                 | 5                  |
-| LPWM           | 3                 | 6                  |
-| R_EN / L_EN    | 4                 | 7                  |
+| RPWM           | 10                | 15                 |
+| LPWM           | 11                | 14                 |
+| R_EN / L_EN    | 8                 | 17                 |
 | GND            | GND               | GND                |
 | VCC (logic)    | 5 V               | 5 V                |
 
-### Encoders → Teensy 4.1
+### Encoders → Teensy 4.0 (not wired yet)
 
 | Signal | Left | Right |
 |--------|------|-------|
-| A      | 8    | 10    |
-| B      | 9    | 11    |
+| A      | 2    | 4     |
+| B      | 3    | 5     |
 
-### GPIO → BTT Pi (BCM numbers, edit `rover.conf` to change)
+### Current Sense → Teensy 4.0
 
-| Name    | BCM Pin |
-|---------|---------|
-| horn    | 17      |
-| led_fwd | 27      |
-| led_rev | 22      |
-| aux1    | 23      |
-| aux2    | 24      |
+| Sensor | Teensy ADC Pin |
+|--------|----------------|
+| Left IS (BTS7960) | 19 (A5) |
+| Right IS (BTS7960) | 16 (A2) |
+
+### GPIO → BTT Pi (BCM numbers)
+
+No GPIO pins are wired in the base config. Modules can claim pins via their
+own `.conf` files (see **Modules** below).
 
 ---
 
@@ -316,9 +330,15 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Phone → Pi | `cameras` | `enabled` (bool) |
 | Phone → Pi | `sleep` | — |
 | Phone → Pi | `wake` | — |
-| Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr`, `temp`, `started`, `estop`, `precheck_ok` |
+| Phone → Pi | `drive_tune` | `max_pwm`, `min_pwm`, `ramp_sec`, `invert_left`, `invert_right` |
+| Phone → Pi | `drive_tune_save` | same as above + persists to rover.conf |
+| Phone → Pi | `update_check` | — |
+| Phone → Pi | `reboot` | — |
+| Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr_l`, `curr_r`, `temp`, `started`, `estop`, `precheck_ok`, `teensy_connected` |
+| Pi → Phone | `drive_tune` | `ok`, `saved`, `max_pwm`, `min_pwm`, `ramp_sec`, … |
 | Pi → Phone | `ota_prog` | `pct` (0-100), `msg` |
 | Pi → Phone | `power` | `sleeping`, `cameras_on` |
+| Pi → Phone | `update` | `status`, `detail` |
 
 ### Pi ↔ Teensy (JSON over USB Serial 115200)
 
@@ -333,7 +353,8 @@ Pi: /tmp/ogun-update.XXXXXX/
 | Pi → Teensy | `estop` | — |
 | Pi → Teensy | `estop_clear` | — |
 | Pi → Teensy | `bootloader` | — |
-| Teensy → Pi | `sensors` | `enc_l`, `enc_r`, `volt`, `curr`, `temp` |
+| Pi → Teensy | `fw_cfg` | pin map, tuning, watchdog, telem interval |
+| Teensy → Pi | `sensors` | `enc_l`, `enc_r`, `volt`, `curr_l`, `curr_r`, `temp` |
 
 ---
 
@@ -363,13 +384,84 @@ No physical button press needed (Teensy 4.x supports auto-reboot via USB).
 
 ---
 
+## Modules
+
+The rover uses an **AzerothCore-style module loader**. Each module lives in its
+own folder under `pi_server/src/modules/mod_<name>/` and registers itself via a
+static initializer — no manual wiring needed.
+
+### Module structure
+
+```
+pi_server/src/modules/mod_<name>/
+├── Mod<Name>.hpp          # Header — inherits RoverModule
+├── Mod<Name>.cpp          # Implementation
+└── mod_<name>_loader.cpp  # Auto-registration (1 line + include)
+```
+
+A matching config file goes in `/etc/rover/modules/<name>.conf` on the Pi
+(example templates ship in `pi_server/modules/`).
+
+### Creating a new module
+
+1. **Create the folder**: `pi_server/src/modules/mod_myfeature/`
+
+2. **Write the class** (inherit `RoverModule`):
+   ```cpp
+   #include "module/RoverModule.hpp"
+   class ModMyFeature : public RoverModule {
+   public:
+       const char* name() const override { return "myfeature"; }
+       bool onLoad(const std::map<std::string,std::string>& conf,
+                   const ModuleContext& ctx) override;
+       void onShutdown() override;
+       bool onCommand(const std::string& type,
+                      const std::string& json) override;
+       void onTick() override;  // called every telemetry cycle
+   };
+   ```
+
+3. **Write the loader** (`mod_myfeature_loader.cpp`):
+   ```cpp
+   #include "module/ModuleRegistry.hpp"
+   #include "modules/mod_myfeature/ModMyFeature.hpp"
+   static bool _reg = ModuleRegistry::add([]() {
+       return std::make_unique<ModMyFeature>();
+   });
+   ```
+
+4. **Build** — CMake auto-discovers `src/modules/*/*.cpp`, no edits needed.
+
+5. **Deploy config** — copy your `.conf.example` to `/etc/rover/modules/<name>.conf`.
+
+### Lifecycle hooks
+
+| Hook | When | Notes |
+|------|------|-------|
+| `onLoad(conf, ctx)` | Server startup | Receives parsed conf + broadcast/teensy/gpio access. Return `false` to skip. |
+| `onCommand(type, json)` | WS message arrives | Return `true` if this module handled the command. |
+| `onTick()` | Every telemetry cycle (~100 ms) | For periodic polling or state updates. |
+| `onShutdown()` | Clean server exit | Turn off outputs, release resources. |
+
+### Included example: `mod_lights`
+
+GPIO-driven headlights/taillights. Config (`/etc/rover/modules/lights.conf`):
+```
+headlight_pin = 17
+taillight_pin = 27
+```
+WS commands: `{"type":"lights","headlights":true}`, `{"type":"lights_status"}`
+
+---
+
 ## Dependencies
 
-### Pi (installed by `install.sh`)
+### Pi (installed by `install.sh` / `ogun deps`)
 - `build-essential`, `cmake`, `ninja-build`
 - `libgpiod-dev`
 - `libjpeg-dev`
 - `libssl-dev` (OpenSSL for WebSocket SHA1)
+- `libsystemd-dev` (sd_notify for watchdog)
 - `teensy_loader_cli` (built from source)
 
 ### Teensy (PlatformIO)
