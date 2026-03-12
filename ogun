@@ -109,8 +109,30 @@ cmd_flash() {
     case "$target" in
         teensy)
             info "Flashing Teensy via USB..."
-            need_cmd pio "Install: pip install platformio"
-            make -C "$ROOT_DIR" flash-teensy
+            need_cmd teensy_loader_cli "Install: sudo ./ogun deps"
+
+            # Look for pre-built hex: installed location first, then local build
+            local hex=""
+            if [ -f /opt/rover/firmware/teensy_firmware.hex ]; then
+                hex="/opt/rover/firmware/teensy_firmware.hex"
+            elif [ -f "$ROOT_DIR/teensy_firmware/.pio/build/${TEENSY_ENV:-teensy40}/firmware.hex" ]; then
+                hex="$ROOT_DIR/teensy_firmware/.pio/build/${TEENSY_ENV:-teensy40}/firmware.hex"
+            fi
+
+            if [ -z "$hex" ]; then
+                die "No firmware hex found. Run 'sudo ogun update' to get the latest."
+            fi
+
+            local MMCU="TEENSY40"
+            if [ -f /etc/rover/rover.conf ]; then
+                local CFG_MMCU
+                CFG_MMCU=$(grep '^teensy_mmcu' /etc/rover/rover.conf 2>/dev/null | cut -d= -f2 | tr -d ' ' || true)
+                [ -n "$CFG_MMCU" ] && MMCU="$CFG_MMCU"
+            fi
+
+            info "Hex: $hex  MCU: $MMCU"
+            teensy_loader_cli --mcu="$MMCU" -w -s -v "$hex"
+            ok "Teensy flashed successfully"
             ;;
         *)
             die "Unknown flash target: $target (options: teensy)"

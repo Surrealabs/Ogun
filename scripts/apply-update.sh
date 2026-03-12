@@ -101,6 +101,13 @@ if $DISABLE_AUTO_UPDATE; then
     echo "[update] Disabled rover-auto-update.timer"
 fi
 
+# Install Teensy firmware hex for later flashing
+if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
+    mkdir -p /opt/rover/firmware
+    cp "$SCRIPT_DIR/teensy_firmware.hex" /opt/rover/firmware/teensy_firmware.hex
+    echo "[update] Installed teensy_firmware.hex → /opt/rover/firmware/"
+fi
+
 # Flash Teensy firmware
 if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     if $FLASH_TEENSY; then
