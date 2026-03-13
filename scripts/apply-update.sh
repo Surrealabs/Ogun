@@ -33,6 +33,10 @@ if [ -f "$SCRIPT_DIR/BUILD" ]; then
     echo "  Build: $(cat "$SCRIPT_DIR/BUILD")"
 fi
 
+# Always restart the rover service on exit, even if the update fails.
+# This prevents the auto-update from permanently killing the service.
+trap 'systemctl start rover.service 2>/dev/null || true' EXIT
+
 # Stop the service
 systemctl stop rover.service 2>/dev/null || true
 
@@ -143,7 +147,8 @@ if [ -f "$SCRIPT_DIR/BUILD" ]; then
     cp "$SCRIPT_DIR/BUILD" /opt/rover/INSTALLED_VERSION
 fi
 
-# Restart
+# Restart (trap also covers this, but explicit restart ensures clean state)
+trap - EXIT
 systemctl restart rover.service
 echo ""
 echo "=== Update Applied ==="
