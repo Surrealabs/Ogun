@@ -108,6 +108,13 @@ if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     echo "[update] Installed teensy_firmware.hex → /opt/rover/firmware/"
 fi
 
+# Install nRF52840 firmware hex for later flashing
+if [ -f "$SCRIPT_DIR/nrf52_firmware.hex" ]; then
+    mkdir -p /opt/rover/firmware
+    cp "$SCRIPT_DIR/nrf52_firmware.hex" /opt/rover/firmware/nrf52_firmware.hex
+    echo "[update] Installed nrf52_firmware.hex → /opt/rover/firmware/"
+fi
+
 # Flash Teensy firmware
 if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     if $FLASH_TEENSY; then

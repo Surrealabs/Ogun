@@ -100,6 +100,12 @@ jobs:
           pio run -e ${{ env.TEENSY_ENV }}
           echo "firmware.hex: $(du -h .pio/build/${{ env.TEENSY_ENV }}/firmware.hex | cut -f1)"
 
+      - name: Build nRF52840 BLE firmware
+        run: |
+          cd nrf52_firmware
+          pio run -e adafruit_nrf52840
+          echo "nrf52840 hex: $(du -h .pio/build/adafruit_nrf52840/firmware.hex | cut -f1)"
+
       # ---------- Package everything --------------------------
       - name: Create update package
         id: package
@@ -113,6 +119,7 @@ jobs:
           # Binaries
           cp pi_server/build/rover_server "$PKG_DIR/"
           cp teensy_firmware/.pio/build/${{ env.TEENSY_ENV }}/firmware.hex "$PKG_DIR/teensy_firmware.hex"
+          cp nrf52_firmware/.pio/build/adafruit_nrf52840/firmware.hex "$PKG_DIR/nrf52_firmware.hex"
 
           # Config / service files
           cp pi_server/scripts/rover.service       "$PKG_DIR/"
@@ -166,7 +173,8 @@ jobs:
 
             **Included:**
             - `rover_server` — ARM64 binary for BTT Pi 1.2
-            - `teensy_firmware.hex` — Teensy 4.0 firmware
+            - `teensy_firmware.hex` — Teensy 4.0 firmware (120 MHz)
+            - `nrf52_firmware.hex` — nRF52840 BLE firmware
             - WebUI assets, config templates, systemd service
 
             **Install on the Pi:**

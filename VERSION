@@ -9,8 +9,8 @@
 # ============================================================
 
 VERSION_MAJOR=0
-VERSION_MINOR=12
-VERSION_PATCH=1
+VERSION_MINOR=13
+VERSION_PATCH=0
 VERSION_TAG=
 
-# Full version string: 0.12.1
+# Full version string: 0.13.0

@@ -4,7 +4,7 @@
 #
 #  Usage:
 #    ./ogun build [all|pi|teensy|cross]
-#    ./ogun flash [teensy]
+#    ./ogun flash [teensy|nrf52]
 #    ./ogun deploy <pi-ip> [--user root]
 #    ./ogun monitor [serial|rover]
 #    ./ogun status <pi-ip>
@@ -134,8 +134,43 @@ cmd_flash() {
             teensy_loader_cli --mcu="$MMCU" -w -s -v "$hex"
             ok "Teensy flashed successfully"
             ;;
+        nrf52)
+            info "Flashing nRF52840 via UF2..."
+
+            local hex=""
+            if [ -f /opt/rover/firmware/nrf52_firmware.hex ]; then
+                hex="/opt/rover/firmware/nrf52_firmware.hex"
+            elif [ -f "$ROOT_DIR/nrf52_firmware/.pio/build/adafruit_nrf52840/firmware.hex" ]; then
+                hex="$ROOT_DIR/nrf52_firmware/.pio/build/adafruit_nrf52840/firmware.hex"
+            fi
+
+            if [ -z "$hex" ]; then
+                die "No nRF52840 firmware hex found. Run 'sudo ogun update' to get the latest."
+            fi
+
+            # adafruit-nrfutil for DFU over serial (Adafruit bootloader)
+            if command -v adafruit-nrfutil &>/dev/null; then
+                local port="${NRF52_PORT:-/dev/ttyACM0}"
+                info "Hex: $hex  Port: $port"
+                adafruit-nrfutil --verbose dfu serial --package "$hex" -p "$port" -b 115200 --singlebank --touch 1200
+                ok "nRF52840 flashed successfully"
+            else
+                # Fallback: check for UF2 mount
+                local uf2_mount=""
+                for d in /media/*/NRF52BOOT /mnt/*/NRF52BOOT /run/media/*/NRF52BOOT; do
+                    [ -d "$d" ] && uf2_mount="$d" && break
+                done
+                if [ -n "$uf2_mount" ]; then
+                    info "Copying firmware to UF2 bootloader at $uf2_mount"
+                    cp "$hex" "$uf2_mount/"
+                    ok "nRF52840 firmware copied to UF2 volume"
+                else
+                    die "No flash tool found. Install adafruit-nrfutil or put the board in UF2 bootloader mode."
+                fi
+            fi
+            ;;
         *)
-            die "Unknown flash target: $target (options: teensy)"
+            die "Unknown flash target: $target (options: teensy, nrf52)"
             ;;
     esac
 }
