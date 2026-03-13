@@ -140,8 +140,8 @@ cmd_flash() {
             local hex=""
             if [ -f /opt/rover/firmware/nrf52_firmware.hex ]; then
                 hex="/opt/rover/firmware/nrf52_firmware.hex"
-            elif [ -f "$ROOT_DIR/nrf52_firmware/.pio/build/adafruit_nrf52840/firmware.hex" ]; then
-                hex="$ROOT_DIR/nrf52_firmware/.pio/build/adafruit_nrf52840/firmware.hex"
+            elif [ -f "$ROOT_DIR/nrf52_firmware/.pio/build/xiao_nrf52840_sense/firmware.hex" ]; then
+                hex="$ROOT_DIR/nrf52_firmware/.pio/build/xiao_nrf52840_sense/firmware.hex"
             fi
 
             if [ -z "$hex" ]; then
@@ -157,7 +157,7 @@ cmd_flash() {
             else
                 # Fallback: check for UF2 mount
                 local uf2_mount=""
-                for d in /media/*/NRF52BOOT /mnt/*/NRF52BOOT /run/media/*/NRF52BOOT; do
+                for d in /media/*/XIAO-SENSE /mnt/*/XIAO-SENSE /run/media/*/XIAO-SENSE /media/*/NRF52BOOT /mnt/*/NRF52BOOT /run/media/*/NRF52BOOT; do
                     [ -d "$d" ] && uf2_mount="$d" && break
                 done
                 if [ -n "$uf2_mount" ]; then

@@ -2,64 +2,72 @@
 // ============================================================
 //  FirmwareConfig — nRF52840 pin assignments & tuning defaults
 //
-//  Adafruit Feather nRF52840 pin mapping.
+//  Seeed XIAO nRF52840 Sense pin mapping.
+//  XIAO has 11 GPIOs: D0-D10, with A0-A5 analog-capable.
 //  Adjust these to match your actual wiring.
+//
+//  XIAO nRF52840 Sense pinout:
+//    D0/A0  D1/A1  D2/A2  D3/A3  D4/SDA  D5/SCL
+//    D6/TX  D7/RX  D8/SCK D9/MISO D10/MOSI
 // ============================================================
 #include <Arduino.h>
 
 namespace fwcfg {
 
 // ---- Motor pins (BTS7960) ---------------------------------
-// These map to Feather nRF52840 digital pins.
-// Adjust to your wiring — these are reasonable defaults.
+// XIAO D0-D10 — adjust to your wiring.
+// Left motor:  RPWM=D0, LPWM=D1, EN=D2
+// Right motor: RPWM=D3, LPWM=D6, EN=D7
 #ifndef ROVER_L_RPWM_PIN
-#define ROVER_L_RPWM_PIN 5
+#define ROVER_L_RPWM_PIN 0    // D0
 #endif
 #ifndef ROVER_L_LPWM_PIN
-#define ROVER_L_LPWM_PIN 6
+#define ROVER_L_LPWM_PIN 1    // D1
 #endif
 #ifndef ROVER_L_EN_PIN
-#define ROVER_L_EN_PIN 9
+#define ROVER_L_EN_PIN 2      // D2
 #endif
 
 #ifndef ROVER_R_RPWM_PIN
-#define ROVER_R_RPWM_PIN 10
+#define ROVER_R_RPWM_PIN 3    // D3
 #endif
 #ifndef ROVER_R_LPWM_PIN
-#define ROVER_R_LPWM_PIN 11
+#define ROVER_R_LPWM_PIN 6    // D6
 #endif
 #ifndef ROVER_R_EN_PIN
-#define ROVER_R_EN_PIN 12
+#define ROVER_R_EN_PIN 7      // D7
 #endif
 
 // ---- Encoder pins (optional — interrupt-based on nRF52) ----
+// Parked on D8/D9/D10/D4 — reassign if encoders are wired.
 #ifndef ROVER_ENC_LA_PIN
-#define ROVER_ENC_LA_PIN 2
+#define ROVER_ENC_LA_PIN 8    // D8
 #endif
 #ifndef ROVER_ENC_LB_PIN
-#define ROVER_ENC_LB_PIN 3
+#define ROVER_ENC_LB_PIN 9    // D9
 #endif
 #ifndef ROVER_ENC_RA_PIN
-#define ROVER_ENC_RA_PIN 4
+#define ROVER_ENC_RA_PIN 10   // D10
 #endif
 #ifndef ROVER_ENC_RB_PIN
-#define ROVER_ENC_RB_PIN 7
+#define ROVER_ENC_RB_PIN 4    // D4
 #endif
 
 // ---- Analog sensing pins -----------------------------------
+// XIAO A0-A5 are D0-D5 in analog mode.
 #ifndef ROVER_VBAT_ADC_PIN
-#define ROVER_VBAT_ADC_PIN A0
+#define ROVER_VBAT_ADC_PIN A0  // D0/A0
 #endif
 #ifndef ROVER_TEMP_ADC_PIN
-#define ROVER_TEMP_ADC_PIN A3
+#define ROVER_TEMP_ADC_PIN A3  // D3/A3
 #endif
 
 // ---- BTS7960 current-sense IS pins -------------------------
 #ifndef ROVER_CURR_L_ADC_PIN
-#define ROVER_CURR_L_ADC_PIN A4
+#define ROVER_CURR_L_ADC_PIN A4  // D4/A4
 #endif
 #ifndef ROVER_CURR_R_ADC_PIN
-#define ROVER_CURR_R_ADC_PIN A5
+#define ROVER_CURR_R_ADC_PIN A5  // D5/A5
 #endif
 
 // ---- Calibration -------------------------------------------
