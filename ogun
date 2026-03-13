@@ -382,6 +382,20 @@ cmd_update() {
     local release_tag
     release_tag=$(echo "$release_json" | grep -o '"tag_name":\s*"[^"]*"' | head -1 | grep -o '"[^"]*"$' | tr -d '"')
     info "Found release: $release_tag"
+
+    # Skip if already on this version (compare tag against installed build string)
+    if [ -f /opt/rover/INSTALLED_VERSION ] && [ "$target_version" = "latest" ]; then
+        local installed
+        installed=$(cat /opt/rover/INSTALLED_VERSION)
+        # INSTALLED_VERSION is like "0.12.1+06a680c", release_tag is like "v0.12.1"
+        local installed_ver="${installed%%+*}"          # strip git hash
+        local release_ver="${release_tag#v}"            # strip leading 'v'
+        if [ "$installed_ver" = "$release_ver" ]; then
+            ok "Already up to date ($release_tag)"
+            return 0
+        fi
+    fi
+
     info "Streaming extract: $tarball_url"
 
     # Stream-extract to temp to reduce peak disk and RAM pressure on Pi.
