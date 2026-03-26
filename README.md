@@ -1,7 +1,7 @@
 # Rover Control System
 
 A full-stack rover platform built on top of a **BTT Pi 1.2** (Klipper board repurposed),
-using a **Teensy 4.0** as a motor/sensor hub, **BTS7960** H-bridge motor drivers,
+using a **Teensy 4.1** (terminal breakout) as a motor/sensor hub, **BTS7960** H-bridge motor drivers,
 controlled from a **Web UI** over **WiFi/WebSocket**.
 
 ---
@@ -33,15 +33,15 @@ controlled from a **Web UI** over **WiFi/WebSocket**.
 └─────────────────────────────────┼───────────────────────────────┘
                                   │
                     ┌─────────────┴──────────────┐
-                    │       Teensy 4.0            │
+                    │     Teensy 4.1 (terminal)   │
                     │  main.cpp (PlatformIO)       │
                     │  MotorController (BTS7960)  │
-                    │  SensorHub (dual current)   │
+                    │  SensorHub (triple current) │
                     └─────────────────────────────┘
-                         |           |
-                    BTS7960 L    BTS7960 R
-                       │               │
-                    Left Motor     Right Motor
+                      |         |         |
+                 BTS7960 L  BTS7960 R  BTS7960 T
+                    │           │         │
+                Left Motor  Right Motor  Turn Motor
 ```
 
 ---
@@ -101,13 +101,13 @@ Ogun/
 │       ├── rover.service         # systemd unit (Type=notify, watchdog)
 │       └── rover.conf.example
 │
-├── teensy_firmware/               # PlatformIO project (Teensy 4.0)
+├── teensy_firmware/               # PlatformIO project (Teensy 4.1)
 │   ├── platformio.ini
 │   └── src/
 │       ├── main.cpp               # Arduino loop + serial JSON protocol
 │       ├── FirmwareConfig.hpp     # Runtime pin/tuning config receiver
-│       ├── MotorController.hpp    # BTS7960 H-bridge (setTarget/tick/coast)
-│       └── SensorHub.hpp          # Dual current sense + telemetry
+│       ├── MotorController.hpp    # BTS7960 H-bridge (setTarget/tick/coast + turn)
+│       └── SensorHub.hpp          # Triple current sense + telemetry
 │
 ├── scripts/                       # Update, verify, auto-update scripts
 ├── ogun                           # CLI tool for build/deploy/release
@@ -282,29 +282,30 @@ Pi: /tmp/ogun-update.XXXXXX/
 
 ## Wiring Reference
 
-### BTS7960 → Teensy 4.0
+### BTS7960 → Teensy 4.1 (Terminal Breakout)
 
-| BTS7960 Signal | Teensy Pin (Left) | Teensy Pin (Right) |
-|----------------|-------------------|--------------------|
-| RPWM           | 10                | 15                 |
-| LPWM           | 11                | 14                 |
-| R_EN / L_EN    | 8                 | 17                 |
-| GND            | GND               | GND                |
-| VCC (logic)    | 5 V               | 5 V                |
+| BTS7960 Signal | Teensy Pin (Left) | Teensy Pin (Right) | Teensy Pin (Turn) |
+|----------------|-------------------|--------------------|-------------------|
+| RPWM           | 20                | 16                 | 24                |
+| LPWM           | 21                | 17                 | 25                |
+| R_EN / L_EN    | 22                | 18                 | 26                |
+| GND            | GND               | GND                | GND               |
+| VCC (logic)    | 5 V               | 5 V                | 5 V               |
 
-### Encoders → Teensy 4.0 (not wired yet)
+### Encoders → Teensy 4.1 (not wired yet)
 
 | Signal | Left | Right |
 |--------|------|-------|
 | A      | 2    | 4     |
 | B      | 3    | 5     |
 
-### Current Sense → Teensy 4.0
+### Current Sense → Teensy 4.1
 
 | Sensor | Teensy ADC Pin |
 |--------|----------------|
-| Left IS (BTS7960) | 19 (A5) |
-| Right IS (BTS7960) | 16 (A2) |
+| Left IS (BTS7960) | 23 |
+| Right IS (BTS7960) | 19 |
+| Turn IS (BTS7960) | 27 |
 
 ### GPIO → BTT Pi (BCM numbers)
 
@@ -319,7 +320,7 @@ own `.conf` files (see **Modules** below).
 
 | Direction | Type | Payload keys |
 |-----------|------|--------------|
-| Phone → Pi | `drive` | `x`, `y`, `rot` (−1..1) |
+| Phone → Pi | `drive` | `x`, `y`, `rot` (−1..1) — `y` drives, `rot` turns |
 | Phone → Pi | `ignition_start` | — |
 | Phone → Pi | `estop_clear` | — |
 | Phone → Pi | `gpio` | `pin`, `state` (bool) |
@@ -334,7 +335,7 @@ own `.conf` files (see **Modules** below).
 | Phone → Pi | `drive_tune_save` | same as above + persists to rover.conf |
 | Phone → Pi | `update_check` | — |
 | Phone → Pi | `reboot` | — |
-| Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr_l`, `curr_r`, `temp`, `started`, `estop`, `precheck_ok`, `teensy_connected` |
+| Pi → Phone | `telemetry` | `enc_l`, `enc_r`, `volt`, `curr_l`, `curr_r`, `curr_t`, `temp`, `started`, `estop`, `precheck_ok`, `teensy_connected` |
 | Pi → Phone | `drive_tune` | `ok`, `saved`, `max_pwm`, `min_pwm`, `ramp_sec`, … |
 | Pi → Phone | `ota_prog` | `pct` (0-100), `msg` |
 | Pi → Phone | `power` | `sleeping`, `cameras_on` |
@@ -344,7 +345,7 @@ own `.conf` files (see **Modules** below).
 
 | Direction | Command | Keys |
 |-----------|---------|------|
-| Pi → Teensy | `drive` | `l`, `r` (−1..1) |
+| Pi → Teensy | `drive` | `l`, `r` (−1..1), `t` (−1..1 turn) |
 | Pi → Teensy | `stop` | — |
 | Pi → Teensy | `sensor_req` | — |
 | Pi → Teensy | `enc_reset` | — |
@@ -354,7 +355,7 @@ own `.conf` files (see **Modules** below).
 | Pi → Teensy | `estop_clear` | — |
 | Pi → Teensy | `bootloader` | — |
 | Pi → Teensy | `fw_cfg` | pin map, tuning, watchdog, telem interval |
-| Teensy → Pi | `sensors` | `enc_l`, `enc_r`, `volt`, `curr_l`, `curr_r`, `temp` |
+| Teensy → Pi | `sensors` | `enc_l`, `enc_r`, `volt`, `curr_l`, `curr_r`, `curr_t`, `temp` |
 
 ---
 

@@ -15,6 +15,7 @@ struct TeensySensors {
     float voltage   = 0.f;   // battery voltage (V) — not wired
     float current_l = 0.f;   // left motor current (A)
     float current_r = 0.f;   // right motor current (A)
+    float current_t = 0.f;   // turning motor current (A)
     float temp      = 0.f;   // board temperature — not wired
 };
 
@@ -30,8 +31,8 @@ public:
     void close();
     bool isOpen() const { return fd_ >= 0; }
 
-    // Drive command: l/r in range -1.0 .. 1.0
-    void sendDrive(float left, float right);
+    // Drive command: l/r in range -1.0 .. 1.0, turn in range -1.0 .. 1.0
+    void sendDrive(float left, float right, float turn = 0.f);
     void sendStop();
     void requestSensors();
 

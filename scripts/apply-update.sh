@@ -112,19 +112,12 @@ if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     echo "[update] Installed teensy_firmware.hex → /opt/rover/firmware/"
 fi
 
-# Install nRF52840 firmware hex for later flashing
-if [ -f "$SCRIPT_DIR/nrf52_firmware.hex" ]; then
-    mkdir -p /opt/rover/firmware
-    cp "$SCRIPT_DIR/nrf52_firmware.hex" /opt/rover/firmware/nrf52_firmware.hex
-    echo "[update] Installed nrf52_firmware.hex → /opt/rover/firmware/"
-fi
-
 # Flash Teensy firmware
 if [ -f "$SCRIPT_DIR/teensy_firmware.hex" ]; then
     if $FLASH_TEENSY; then
         echo "[update] Flashing Teensy..."
         if command -v teensy_loader_cli &>/dev/null; then
-            MMCU="TEENSY40"
+            MMCU="TEENSY41"
             if [ -f /etc/rover/rover.conf ]; then
                 CFG_MMCU=$(grep '^teensy_mmcu' /etc/rover/rover.conf | cut -d= -f2 | tr -d ' ')
                 [ -n "$CFG_MMCU" ] && MMCU="$CFG_MMCU"

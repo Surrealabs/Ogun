@@ -4,27 +4,38 @@
 
 namespace fwcfg {
 
-// ---- Motor pins (BTS7960) ---------------------------------
-// Left:  RPWM=10, LPWM=11, EN=8, IS=9
-// Right: RPWM=15, LPWM=14, EN=17, IS=16
+// ---- Motor pins (BTS7960, Teensy 4.1 terminal breakout) -----
+// Left:  RPWM=20, LPWM=21, EN=22, IS=23
+// Right: RPWM=16, LPWM=17, EN=18, IS=19
+// Turn:  RPWM=24, LPWM=25, EN=26, IS=27
 #ifndef ROVER_L_RPWM_PIN
-#define ROVER_L_RPWM_PIN 10
+#define ROVER_L_RPWM_PIN 20
 #endif
 #ifndef ROVER_L_LPWM_PIN
-#define ROVER_L_LPWM_PIN 11
+#define ROVER_L_LPWM_PIN 21
 #endif
 #ifndef ROVER_L_EN_PIN
-#define ROVER_L_EN_PIN 8
+#define ROVER_L_EN_PIN 22
 #endif
 
 #ifndef ROVER_R_RPWM_PIN
-#define ROVER_R_RPWM_PIN 15
+#define ROVER_R_RPWM_PIN 16
 #endif
 #ifndef ROVER_R_LPWM_PIN
-#define ROVER_R_LPWM_PIN 14
+#define ROVER_R_LPWM_PIN 17
 #endif
 #ifndef ROVER_R_EN_PIN
-#define ROVER_R_EN_PIN 17
+#define ROVER_R_EN_PIN 18
+#endif
+
+#ifndef ROVER_T_RPWM_PIN
+#define ROVER_T_RPWM_PIN 24
+#endif
+#ifndef ROVER_T_LPWM_PIN
+#define ROVER_T_LPWM_PIN 25
+#endif
+#ifndef ROVER_T_EN_PIN
+#define ROVER_T_EN_PIN 26
 #endif
 
 // ---- Encoder pins (not wired yet — parked on unused pins) --
@@ -51,13 +62,15 @@ namespace fwcfg {
 #endif
 
 // ---- BTS7960 current-sense IS pins -------------------------
-// Left IS rewired to pin 19 (A5, analog-capable)
-// Right IS=16 (= A2, works correctly)
+// Left IS → pin 23, Right IS → pin 19, Turn IS → pin 27
 #ifndef ROVER_CURR_L_ADC_PIN
-#define ROVER_CURR_L_ADC_PIN 19
+#define ROVER_CURR_L_ADC_PIN 23
 #endif
 #ifndef ROVER_CURR_R_ADC_PIN
-#define ROVER_CURR_R_ADC_PIN 16
+#define ROVER_CURR_R_ADC_PIN 19
+#endif
+#ifndef ROVER_CURR_T_ADC_PIN
+#define ROVER_CURR_T_ADC_PIN 27
 #endif
 
 // ---- Calibration -------------------------------------------
@@ -118,6 +131,10 @@ constexpr uint8_t R_RPWM = ROVER_R_RPWM_PIN;
 constexpr uint8_t R_LPWM = ROVER_R_LPWM_PIN;
 constexpr uint8_t R_EN   = ROVER_R_EN_PIN;
 
+constexpr uint8_t T_RPWM = ROVER_T_RPWM_PIN;
+constexpr uint8_t T_LPWM = ROVER_T_LPWM_PIN;
+constexpr uint8_t T_EN   = ROVER_T_EN_PIN;
+
 constexpr uint8_t ENC_LA = ROVER_ENC_LA_PIN;
 constexpr uint8_t ENC_LB = ROVER_ENC_LB_PIN;
 constexpr uint8_t ENC_RA = ROVER_ENC_RA_PIN;
@@ -126,6 +143,7 @@ constexpr uint8_t ENC_RB = ROVER_ENC_RB_PIN;
 constexpr uint8_t VBAT_ADC_PIN   = ROVER_VBAT_ADC_PIN;
 constexpr uint8_t CURR_L_ADC_PIN = ROVER_CURR_L_ADC_PIN;
 constexpr uint8_t CURR_R_ADC_PIN = ROVER_CURR_R_ADC_PIN;
+constexpr uint8_t CURR_T_ADC_PIN = ROVER_CURR_T_ADC_PIN;
 constexpr uint8_t TEMP_ADC_PIN   = ROVER_TEMP_ADC_PIN;
 
 constexpr float VBAT_DIV_RATIO      = ROVER_VBAT_DIV_RATIO;

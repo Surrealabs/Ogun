@@ -69,6 +69,7 @@ static std::string buildTelemetry(const TeensySensors& s,
        << "\"volt\":"    << s.voltage << ","
        << "\"curr_l\":"  << s.current_l << ","
        << "\"curr_r\":"  << s.current_r << ","
+       << "\"curr_t\":"  << s.current_t << ","
        << "\"temp\":"    << s.temp    << ","
          << "\"started\":" << (started ? "true" : "false") << ","
          << "\"estop\":" << (estopLatched ? "true" : "false") << ","
@@ -221,6 +222,9 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"r_rpwm\":" << cfg.teensy_r_rpwm_pin << ","
        << "\"r_lpwm\":" << cfg.teensy_r_lpwm_pin << ","
        << "\"r_en\":"   << cfg.teensy_r_en_pin << ","
+       << "\"t_rpwm\":" << cfg.teensy_t_rpwm_pin << ","
+       << "\"t_lpwm\":" << cfg.teensy_t_lpwm_pin << ","
+       << "\"t_en\":"   << cfg.teensy_t_en_pin << ","
        << "\"enc_la\":" << cfg.teensy_enc_la_pin << ","
        << "\"enc_lb\":" << cfg.teensy_enc_lb_pin << ","
        << "\"enc_ra\":" << cfg.teensy_enc_ra_pin << ","
@@ -228,6 +232,7 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"vbat_adc\":" << cfg.teensy_vbat_adc_pin << ","
        << "\"curr_l_adc\":" << cfg.teensy_curr_l_adc_pin << ","
        << "\"curr_r_adc\":" << cfg.teensy_curr_r_adc_pin << ","
+       << "\"curr_t_adc\":" << cfg.teensy_curr_t_adc_pin << ","
        << "\"temp_adc\":" << cfg.teensy_temp_adc_pin << ","
        << "\"vbat_div\":" << cfg.teensy_vbat_div_ratio << ","
        << "\"curr_zero_mv\":" << cfg.teensy_curr_zero_mv << ","
@@ -455,7 +460,7 @@ static bool dispatchCommand(const std::string& json,
         }
         return true;
     }
-    // --- Drive (car-style: both motors get same throttle) ---
+    // --- Drive (car-style: both motors get same throttle, turn motor steers) ---
     if (type == RoverCmd::DRIVE) {
         {
             std::lock_guard<std::mutex> ck(controlMtx);
@@ -465,16 +470,20 @@ static bool dispatchCommand(const std::string& json,
             }
         }
         float y = jsonFloat(json, "y");   // forward/backward throttle
+        float rot = jsonFloat(json, "rot"); // turning motor input
 
         // Apply deadband
         if (std::abs(y) < cfg.deadband) y = 0.f;
+        if (std::abs(rot) < cfg.deadband) rot = 0.f;
 
         // Cap to max speed
         y = std::max(-cfg.max_motor_speed, std::min(cfg.max_motor_speed, y));
+        rot = std::max(-1.0f, std::min(1.0f, rot));
 
         // Car chassis: both motors get identical throttle.
+        // Turn motor gets rot independently.
         // Motor inversion handled by Teensy firmware.
-        teensy.sendDrive(y, y);
+        teensy.sendDrive(y, y, rot);
         return true;
     }
     // --- GPIO (no pins wired yet — commands accepted but no-op) ---

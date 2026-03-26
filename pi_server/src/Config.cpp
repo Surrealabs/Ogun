@@ -32,6 +32,9 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "teensy_r_rpwm_pin") cfg.teensy_r_rpwm_pin = std::stoi(val);
         else if (key == "teensy_r_lpwm_pin") cfg.teensy_r_lpwm_pin = std::stoi(val);
         else if (key == "teensy_r_en_pin") cfg.teensy_r_en_pin = std::stoi(val);
+        else if (key == "teensy_t_rpwm_pin") cfg.teensy_t_rpwm_pin = std::stoi(val);
+        else if (key == "teensy_t_lpwm_pin") cfg.teensy_t_lpwm_pin = std::stoi(val);
+        else if (key == "teensy_t_en_pin") cfg.teensy_t_en_pin = std::stoi(val);
         else if (key == "teensy_enc_la_pin") cfg.teensy_enc_la_pin = std::stoi(val);
         else if (key == "teensy_enc_lb_pin") cfg.teensy_enc_lb_pin = std::stoi(val);
         else if (key == "teensy_enc_ra_pin") cfg.teensy_enc_ra_pin = std::stoi(val);
@@ -39,6 +42,7 @@ RoverConfig loadConfig(const std::string& path) {
         else if (key == "teensy_vbat_adc_pin") cfg.teensy_vbat_adc_pin = std::stoi(val);
         else if (key == "teensy_curr_l_adc_pin") cfg.teensy_curr_l_adc_pin = std::stoi(val);
         else if (key == "teensy_curr_r_adc_pin") cfg.teensy_curr_r_adc_pin = std::stoi(val);
+        else if (key == "teensy_curr_t_adc_pin") cfg.teensy_curr_t_adc_pin = std::stoi(val);
         else if (key == "teensy_temp_adc_pin") cfg.teensy_temp_adc_pin = std::stoi(val);
         else if (key == "teensy_vbat_div_ratio") cfg.teensy_vbat_div_ratio = std::stof(val);
         else if (key == "teensy_curr_zero_mv") cfg.teensy_curr_zero_mv = std::stof(val);

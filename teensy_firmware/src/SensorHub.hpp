@@ -1,8 +1,8 @@
 #pragma once
 // ============================================================
-//  SensorHub — dual current sense + stub telemetry for bring-up.
+//  SensorHub — triple current sense + stub telemetry for bring-up.
 //  Voltage, temp, encoders disabled (no hardware wired).
-//  Two BTS7960 IS pins read for left/right motor current.
+//  Three BTS7960 IS pins read for left/right/turn motor current.
 // ============================================================
 #include <Arduino.h>
 #include <Encoder.h>
@@ -11,6 +11,7 @@ struct SensorConfig {
     uint8_t vbatAdcPin;
     uint8_t currLAdcPin;   // left BTS7960 IS pin
     uint8_t currRAdcPin;   // right BTS7960 IS pin
+    uint8_t currTAdcPin;   // turning motor BTS7960 IS pin
     uint8_t tempAdcPin;
     float vbatDivRatio;
     float currZeroMv;
@@ -35,22 +36,26 @@ public:
         voltage_   = 0.f;
         temp_      = 0.f;
 
-        // Left motor current sense (BTS7960 IS → pin 19/A5)
+        // Left motor current sense
         float rawL  = (float)analogRead(cfg_.currLAdcPin) / 4095.f * 3300.f; // mV
         currentL_   = (rawL - cfg_.currZeroMv) / cfg_.currSensMvPerA;
 
-        // Right motor current sense (BTS7960 IS → pin 16/A2)
+        // Right motor current sense
         float rawR  = (float)analogRead(cfg_.currRAdcPin) / 4095.f * 3300.f; // mV
         currentR_   = (rawR - cfg_.currZeroMv) / cfg_.currSensMvPerA;
+
+        // Turning motor current sense
+        float rawT  = (float)analogRead(cfg_.currTAdcPin) / 4095.f * 3300.f; // mV
+        currentT_   = (rawT - cfg_.currZeroMv) / cfg_.currSensMvPerA;
     }
 
     void toJson(char* buf, size_t bufLen) {
         snprintf(buf, bufLen,
             "{\"type\":\"sensors\","
             "\"enc_l\":%ld,\"enc_r\":%ld,"
-            "\"volt\":%.2f,\"curr_l\":%.2f,\"curr_r\":%.2f,\"temp\":%.1f}",
+            "\"volt\":%.2f,\"curr_l\":%.2f,\"curr_r\":%.2f,\"curr_t\":%.2f,\"temp\":%.1f}",
             (long)encLTicks_, (long)encRTicks_,
-            voltage_, currentL_, currentR_, temp_);
+            voltage_, currentL_, currentR_, currentT_, temp_);
     }
 
     void resetEncoders() { encL_.write(0); encR_.write(0); }
@@ -60,11 +65,12 @@ public:
     float volt()  const { return voltage_; }
     float currL() const { return currentL_; }
     float currR() const { return currentR_; }
+    float currT() const { return currentT_; }
     float temp()  const { return temp_;    }
 
 private:
     Encoder encL_, encR_;
     SensorConfig cfg_;
     long    encLTicks_{0}, encRTicks_{0};
-    float   voltage_{0.f}, currentL_{0.f}, currentR_{0.f}, temp_{0.f};
+    float   voltage_{0.f}, currentL_{0.f}, currentR_{0.f}, currentT_{0.f}, temp_{0.f};
 };

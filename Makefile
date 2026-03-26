@@ -40,7 +40,7 @@ SYSROOT     := $(PI_DIR)/sysroot-arm64
 PI_USER     ?= root
 PI          ?=
 BUILD_TYPE  ?= MinSizeRel
-TEENSY_ENV  ?= teensy40
+TEENSY_ENV  ?= teensy41
 JOBS        ?= $(shell nproc 2>/dev/null || echo 2)
 
 # Version

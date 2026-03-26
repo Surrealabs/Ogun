@@ -12,13 +12,16 @@ serial_baud    = 115200
 # Push Teensy firmware runtime configuration at boot (true/false)
 teensy_push_fw_config = true
 
-# Teensy firmware motor/encoder pin map (digital pins)
-teensy_l_rpwm_pin = 10
-teensy_l_lpwm_pin = 11
-teensy_l_en_pin   = 8
-teensy_r_rpwm_pin = 15
-teensy_r_lpwm_pin = 14
-teensy_r_en_pin   = 17
+# Teensy firmware motor/encoder pin map (digital pins, Teensy 4.1 terminal breakout)
+teensy_l_rpwm_pin = 20
+teensy_l_lpwm_pin = 21
+teensy_l_en_pin   = 22
+teensy_r_rpwm_pin = 16
+teensy_r_lpwm_pin = 17
+teensy_r_en_pin   = 18
+teensy_t_rpwm_pin = 24
+teensy_t_lpwm_pin = 25
+teensy_t_en_pin   = 26
 teensy_enc_la_pin = 2
 teensy_enc_lb_pin = 3
 teensy_enc_ra_pin = 4
@@ -26,8 +29,9 @@ teensy_enc_rb_pin = 5
 
 # Teensy analog sensor pin map
 teensy_vbat_adc_pin = 14
-teensy_curr_l_adc_pin = 19
-teensy_curr_r_adc_pin = 16
+teensy_curr_l_adc_pin = 23
+teensy_curr_r_adc_pin = 19
+teensy_curr_t_adc_pin = 27
 teensy_temp_adc_pin = 23
 
 # Teensy sensor calibration + timings
@@ -91,4 +95,4 @@ audio_dir      = /opt/rover/sounds
 # Path to teensy_loader_cli (installed by install.sh)
 ota_flash_cmd  = /usr/local/bin/teensy_loader_cli
 # Your Teensy model: TEENSY40, TEENSY41, TEENSY36, TEENSYLC ...
-teensy_mmcu    = TEENSY40
+teensy_mmcu    = TEENSY41

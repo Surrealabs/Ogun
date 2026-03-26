@@ -98,12 +98,12 @@ bool TeensyBridge::writeLine(const std::string& s) {
     return n == (ssize_t)line.size();
 }
 
-void TeensyBridge::sendDrive(float left, float right) {
+void TeensyBridge::sendDrive(float left, float right, float turn) {
     // clamp
     auto clamp = [](float v) { return v < -1.f ? -1.f : v > 1.f ? 1.f : v; };
-    left = clamp(left); right = clamp(right);
+    left = clamp(left); right = clamp(right); turn = clamp(turn);
     std::ostringstream ss;
-    ss << "{\"cmd\":\"drive\",\"l\":" << left << ",\"r\":" << right << "}";
+    ss << "{\"cmd\":\"drive\",\"l\":" << left << ",\"r\":" << right << ",\"t\":" << turn << "}";
     if (fd_ >= 0) writeLine(ss.str());
 }
 
@@ -141,6 +141,7 @@ void TeensyBridge::parseLine(const std::string& line) {
     s.voltage   = getFloat("volt");
     s.current_l = getFloat("curr_l");
     s.current_r = getFloat("curr_r");
+    s.current_t = getFloat("curr_t");
     s.temp      = getFloat("temp");
     {
         std::lock_guard<std::mutex> lk(sensorMtx_);

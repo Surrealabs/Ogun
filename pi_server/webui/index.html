@@ -433,6 +433,7 @@ canvas.joystick {
     <div class="telem-grid">
       <div class="telem-card"><div class="telem-label">Curr L</div><div class="telem-value" id="tvCurrL">--</div></div>
       <div class="telem-card"><div class="telem-label">Curr R</div><div class="telem-value" id="tvCurrR">--</div></div>
+      <div class="telem-card"><div class="telem-label">Curr T</div><div class="telem-value" id="tvCurrT">--</div></div>
       <div class="telem-card"><div class="telem-label">EncL</div><div class="telem-value" id="tvEncL">0</div></div>
       <div class="telem-card"><div class="telem-label">EncR</div><div class="telem-value" id="tvEncR">0</div></div>
       <div class="telem-card"><div class="telem-label">Latency</div><div class="telem-value" id="tvLat">--</div></div>
@@ -596,7 +597,7 @@ function slidingAvg(buf, val) {
   let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i];
   return s / buf.length;
 }
-let winCurrL = [], winCurrR = [], winLat = [];
+let winCurrL = [], winCurrR = [], winCurrT = [], winLat = [];
 let editMode = false;
 let camerasEnabled = true;
 let roverSleeping = false;
@@ -1288,7 +1289,7 @@ function onLoginSuccess() {
   drivetrainStarted = false;
   estopLatched = false;
   precheckOk = !roverSleeping;
-  winCurrL.length = 0; winCurrR.length = 0; winLat.length = 0;
+  winCurrL.length = 0; winCurrR.length = 0; winCurrT.length = 0; winLat.length = 0;
   connectDialog.classList.add('hidden');
   statusDot.classList.add('connected');
   statusText.textContent = 'Connected (' + roverIp + ')';
@@ -1397,6 +1398,7 @@ function handleMessage(raw) {
       lastTelem = msg;
       $('tvCurrL').textContent = slidingAvg(winCurrL, msg.curr_l || 0).toFixed(2) + 'A';
       $('tvCurrR').textContent = slidingAvg(winCurrR, msg.curr_r || 0).toFixed(2) + 'A';
+      $('tvCurrT').textContent = slidingAvg(winCurrT, msg.curr_t || 0).toFixed(2) + 'A';
       $('tvEncL').textContent  = msg.enc_l || 0;
       $('tvEncR').textContent  = msg.enc_r || 0;
       drivetrainStarted = !!msg.started;
@@ -1601,14 +1603,15 @@ class Joystick {
 // ---- Instantiate joysticks ----
 let leftY = 0, rightX = 0;
 const joyL = new Joystick($('joyLeft'),  (x, y) => { leftY = y;  sendDrive(); });
-const joyR = new Joystick($('joyRight'), (x, y) => { sendDrive(); });
+const joyR = new Joystick($('joyRight'), (x, y) => { rightX = x; sendDrive(); });
 
 // ---- Drive command throttle (max 30 Hz) ----
 let driveInterval = null;
 let lastDriveJson = '';
 function sendDrive() {
   const fwd = Math.abs(leftY)  < 0.04 ? 0 : leftY;
-  const json = JSON.stringify({ type: 'drive', x: 0, y: parseFloat(fwd.toFixed(3)), rot: 0 });
+  const rot = Math.abs(rightX) < 0.04 ? 0 : rightX;
+  const json = JSON.stringify({ type: 'drive', x: 0, y: parseFloat(fwd.toFixed(3)), rot: parseFloat(rot.toFixed(3)) });
   if (json === lastDriveJson) return; // dedupe
   lastDriveJson = json;
   $('tvThrottle').textContent = fwd.toFixed(2);

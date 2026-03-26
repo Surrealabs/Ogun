@@ -1,6 +1,6 @@
 #pragma once
 // ============================================================
-//  MotorController — BTS7960 dual H-bridge, car chassis
+//  MotorController — BTS7960 dual H-bridge + turning motor
 //
 //  Simple tuning model:
 //    maxPwm     — PWM ceiling (0-255)
@@ -8,7 +8,8 @@
 //    rampSec    — seconds to ramp from 0 → full power
 //    invertLeft / invertRight — flip motor direction
 //
-//  Both motors always receive the same throttle (car chassis).
+//  Left/right motors always receive the same throttle (car chassis).
+//  Turning motor is independent (steering actuator).
 //  Call tick() every loop iteration to keep the slew running.
 // ============================================================
 #include <Arduino.h>
@@ -31,8 +32,9 @@ static constexpr float MOTOR_ZERO_EPSILON = 0.01f;
 
 class MotorController {
 public:
-    MotorController(const MotorPins& left, const MotorPins& right, const MotorTuning& tuning = MotorTuning())
-        : left_(left), right_(right), tuning_(tuning) {}
+    MotorController(const MotorPins& left, const MotorPins& right,
+                    const MotorPins& turn, const MotorTuning& tuning = MotorTuning())
+        : left_(left), right_(right), turn_(turn), tuning_(tuning) {}
 
     void begin() {
         pinMode(left_.rpwm, OUTPUT);
@@ -41,8 +43,12 @@ public:
         pinMode(right_.rpwm, OUTPUT);
         pinMode(right_.lpwm, OUTPUT);
         pinMode(right_.en,   OUTPUT);
+        pinMode(turn_.rpwm, OUTPUT);
+        pinMode(turn_.lpwm, OUTPUT);
+        pinMode(turn_.en,   OUTPUT);
         digitalWrite(left_.en,  LOW);
         digitalWrite(right_.en, LOW);
+        digitalWrite(turn_.en,  LOW);
         stop();
     }
 
@@ -52,6 +58,13 @@ public:
         // Car chassis: average to single throttle, ignore turn
         float throttle = constrain((leftIn + rightIn) * 0.5f, -1.0f, 1.0f);
         target_ = mapThrottle(throttle);
+    }
+
+    // Set a new turn target for the steering motor.
+    // Range -1..1 (left..right). Independent of drive throttle.
+    void setTurnTarget(float turnIn) {
+        turnIn = constrain(turnIn, -1.0f, 1.0f);
+        turnTarget_ = mapThrottle(turnIn);
     }
 
     // Call every loop iteration. Advances the slew ramp by dt and
@@ -65,29 +78,36 @@ public:
         lastUpdateMs_ = now;
 
         output_ = slew(output_, target_, dt);
+        turnOutput_ = slew(turnOutput_, turnTarget_, dt);
 
         setMotor(left_,  tuning_.invertLeft  ? -output_ : output_);
         setMotor(right_, tuning_.invertRight ? -output_ : output_);
+        setMotor(turn_,  turnOutput_);
     }
 
     // Coast to zero: set target to 0, let slew handle it gently.
-    void coast() { target_ = 0.0f; }
+    void coast() { target_ = 0.0f; turnTarget_ = 0.0f; }
 
     // Hard stop: zero everything immediately. Only for e-stop/disarm.
     void stop() {
         target_ = 0.0f;
         output_ = 0.0f;
+        turnTarget_ = 0.0f;
+        turnOutput_ = 0.0f;
         setMotor(left_, 0.0f);
         setMotor(right_, 0.0f);
+        setMotor(turn_, 0.0f);
         lastUpdateMs_ = millis();
     }
 
     void enable(bool en) {
         digitalWrite(left_.en,  en ? HIGH : LOW);
         digitalWrite(right_.en, en ? HIGH : LOW);
+        digitalWrite(turn_.en,  en ? HIGH : LOW);
     }
 
     float output() const { return output_; }
+    float turnOutput() const { return turnOutput_; }
 
 private:
     // Map joystick -1..1 → normalized output incorporating min/max PWM
@@ -141,9 +161,11 @@ private:
         }
     }
 
-    MotorPins left_, right_;
+    MotorPins left_, right_, turn_;
     MotorTuning tuning_;
     float target_ = 0.0f;
     float output_ = 0.0f;
+    float turnTarget_ = 0.0f;
+    float turnOutput_ = 0.0f;
     uint32_t lastUpdateMs_ = 0;
 };

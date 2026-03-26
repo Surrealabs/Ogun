@@ -25,6 +25,7 @@ extern "C" void _reboot_Teensyduino_(void);
 struct RuntimeConfig {
     MotorPins left{fwcfg::L_RPWM, fwcfg::L_LPWM, fwcfg::L_EN};
     MotorPins right{fwcfg::R_RPWM, fwcfg::R_LPWM, fwcfg::R_EN};
+    MotorPins turn{fwcfg::T_RPWM, fwcfg::T_LPWM, fwcfg::T_EN};
     uint8_t encLA{fwcfg::ENC_LA};
     uint8_t encLB{fwcfg::ENC_LB};
     uint8_t encRA{fwcfg::ENC_RA};
@@ -33,6 +34,7 @@ struct RuntimeConfig {
         fwcfg::VBAT_ADC_PIN,
         fwcfg::CURR_L_ADC_PIN,
         fwcfg::CURR_R_ADC_PIN,
+        fwcfg::CURR_T_ADC_PIN,
         fwcfg::TEMP_ADC_PIN,
         fwcfg::VBAT_DIV_RATIO,
         fwcfg::CURR_ZERO_MV,
@@ -132,7 +134,7 @@ static void applyRuntimeConfig(const RuntimeConfig& cfg) {
     if (motors) motors->stop();
 
     gCfg = cfg;
-    motors = std::make_unique<MotorController>(gCfg.left, gCfg.right, gCfg.motorTuning);
+    motors = std::make_unique<MotorController>(gCfg.left, gCfg.right, gCfg.turn, gCfg.motorTuning);
     sensors = std::make_unique<SensorHub>(
         gCfg.encLA, gCfg.encLB, gCfg.encRA, gCfg.encRB, gCfg.sensor);
 
@@ -141,13 +143,14 @@ static void applyRuntimeConfig(const RuntimeConfig& cfg) {
 }
 
 static void emitConfig() {
-    char buf[500];
+    char buf[600];
     snprintf(buf, sizeof(buf),
         "{\"type\":\"fw_cfg\","
         "\"l_rpwm\":%u,\"l_lpwm\":%u,\"l_en\":%u,"
         "\"r_rpwm\":%u,\"r_lpwm\":%u,\"r_en\":%u,"
+        "\"t_rpwm\":%u,\"t_lpwm\":%u,\"t_en\":%u,"
         "\"enc_la\":%u,\"enc_lb\":%u,\"enc_ra\":%u,\"enc_rb\":%u,"
-        "\"vbat_adc\":%u,\"curr_l_adc\":%u,\"curr_r_adc\":%u,\"temp_adc\":%u,"
+        "\"vbat_adc\":%u,\"curr_l_adc\":%u,\"curr_r_adc\":%u,\"curr_t_adc\":%u,\"temp_adc\":%u,"
         "\"vbat_div\":%.3f,\"curr_zero_mv\":%.1f,\"curr_sens_mv_per_a\":%.1f,"
         "\"watchdog_ms\":%lu,\"telem_ms\":%lu,"
         "\"max_pwm\":%u,\"min_pwm\":%u,\"ramp_sec\":%.3f,"
@@ -158,8 +161,10 @@ static void emitConfig() {
         "\"watchdog_trips\":%lu}",
         gCfg.left.rpwm, gCfg.left.lpwm, gCfg.left.en,
         gCfg.right.rpwm, gCfg.right.lpwm, gCfg.right.en,
+        gCfg.turn.rpwm, gCfg.turn.lpwm, gCfg.turn.en,
         gCfg.encLA, gCfg.encLB, gCfg.encRA, gCfg.encRB,
-        gCfg.sensor.vbatAdcPin, gCfg.sensor.currLAdcPin, gCfg.sensor.currRAdcPin, gCfg.sensor.tempAdcPin,
+        gCfg.sensor.vbatAdcPin, gCfg.sensor.currLAdcPin, gCfg.sensor.currRAdcPin,
+        gCfg.sensor.currTAdcPin, gCfg.sensor.tempAdcPin,
         gCfg.sensor.vbatDivRatio, gCfg.sensor.currZeroMv, gCfg.sensor.currSensMvPerA,
         (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs,
         gCfg.motorTuning.maxPwm, gCfg.motorTuning.minPwm, gCfg.motorTuning.rampSec,
@@ -215,7 +220,9 @@ void processCommand(const char* line) {
         }
         float l = applyDeadband(jsonGetFloat(line, "\"l\""), gCfg.inputDeadband);
         float r = applyDeadband(jsonGetFloat(line, "\"r\""), gCfg.inputDeadband);
+        float t = applyDeadband(jsonGetFloat(line, "\"t\""), gCfg.inputDeadband);
         motors->setTarget(l, r);
+        motors->setTurnTarget(t);
         lastDriveMs = millis();
         return;
     }
@@ -253,6 +260,9 @@ void processCommand(const char* line) {
         if (jsonTryGetInt(line, "\"r_rpwm\"", &vi)) cfg.right.rpwm = toPin(vi, cfg.right.rpwm);
         if (jsonTryGetInt(line, "\"r_lpwm\"", &vi)) cfg.right.lpwm = toPin(vi, cfg.right.lpwm);
         if (jsonTryGetInt(line, "\"r_en\"", &vi)) cfg.right.en = toPin(vi, cfg.right.en);
+        if (jsonTryGetInt(line, "\"t_rpwm\"", &vi)) cfg.turn.rpwm = toPin(vi, cfg.turn.rpwm);
+        if (jsonTryGetInt(line, "\"t_lpwm\"", &vi)) cfg.turn.lpwm = toPin(vi, cfg.turn.lpwm);
+        if (jsonTryGetInt(line, "\"t_en\"", &vi)) cfg.turn.en = toPin(vi, cfg.turn.en);
 
         if (jsonTryGetInt(line, "\"enc_la\"", &vi)) cfg.encLA = toPin(vi, cfg.encLA);
         if (jsonTryGetInt(line, "\"enc_lb\"", &vi)) cfg.encLB = toPin(vi, cfg.encLB);
@@ -262,6 +272,7 @@ void processCommand(const char* line) {
         if (jsonTryGetInt(line, "\"vbat_adc\"", &vi)) cfg.sensor.vbatAdcPin = toPin(vi, cfg.sensor.vbatAdcPin);
         if (jsonTryGetInt(line, "\"curr_l_adc\"", &vi)) cfg.sensor.currLAdcPin = toPin(vi, cfg.sensor.currLAdcPin);
         if (jsonTryGetInt(line, "\"curr_r_adc\"", &vi)) cfg.sensor.currRAdcPin = toPin(vi, cfg.sensor.currRAdcPin);
+        if (jsonTryGetInt(line, "\"curr_t_adc\"", &vi)) cfg.sensor.currTAdcPin = toPin(vi, cfg.sensor.currTAdcPin);
         if (jsonTryGetInt(line, "\"temp_adc\"", &vi)) cfg.sensor.tempAdcPin = toPin(vi, cfg.sensor.tempAdcPin);
 
         if (jsonTryGetFloat(line, "\"vbat_div\"", &vf)) cfg.sensor.vbatDivRatio = vf;
