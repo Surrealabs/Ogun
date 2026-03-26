@@ -5,37 +5,39 @@
 namespace fwcfg {
 
 // ---- Motor pins (BTS7960, Teensy 4.1 terminal breakout) -----
-// Left:  RPWM=20, LPWM=21, EN=22, IS=23
-// Right: RPWM=16, LPWM=17, EN=18, IS=19
-// Turn:  RPWM=24, LPWM=25, EN=26, IS=27
+// RPWM/LPWM MUST be on PWM-capable pins (Teensy 4.1 PWM: 0-9,10-15,22-25,28-29,33,36-37,42-47).
+// EN and IS only need digital/analog — can be on any pin.
+// Left:  RPWM=6, LPWM=7, EN=20, IS=A0(14)
+// Right: RPWM=8, LPWM=9, EN=21, IS=A1(15)
+// Turn:  RPWM=24, LPWM=25, EN=26, IS=A2(16)
 #ifndef ROVER_L_RPWM_PIN
-#define ROVER_L_RPWM_PIN 20
+#define ROVER_L_RPWM_PIN 6     // FlexPWM1 — PWM capable
 #endif
 #ifndef ROVER_L_LPWM_PIN
-#define ROVER_L_LPWM_PIN 21
+#define ROVER_L_LPWM_PIN 7     // FlexPWM1 — PWM capable
 #endif
 #ifndef ROVER_L_EN_PIN
-#define ROVER_L_EN_PIN 22
+#define ROVER_L_EN_PIN 20      // digital only — fine for EN
 #endif
 
 #ifndef ROVER_R_RPWM_PIN
-#define ROVER_R_RPWM_PIN 16
+#define ROVER_R_RPWM_PIN 8     // FlexPWM1 — PWM capable
 #endif
 #ifndef ROVER_R_LPWM_PIN
-#define ROVER_R_LPWM_PIN 17
+#define ROVER_R_LPWM_PIN 9     // FlexPWM1 — PWM capable
 #endif
 #ifndef ROVER_R_EN_PIN
-#define ROVER_R_EN_PIN 18
+#define ROVER_R_EN_PIN 21      // digital only — fine for EN
 #endif
 
 #ifndef ROVER_T_RPWM_PIN
-#define ROVER_T_RPWM_PIN 24
+#define ROVER_T_RPWM_PIN 24    // FlexPWM1 — PWM capable
 #endif
 #ifndef ROVER_T_LPWM_PIN
-#define ROVER_T_LPWM_PIN 25
+#define ROVER_T_LPWM_PIN 25    // FlexPWM1 — PWM capable
 #endif
 #ifndef ROVER_T_EN_PIN
-#define ROVER_T_EN_PIN 26
+#define ROVER_T_EN_PIN 26      // digital only — fine for EN
 #endif
 
 // ---- Encoder pins (not wired yet — parked on unused pins) --
@@ -55,22 +57,23 @@ namespace fwcfg {
 // ---- Analog sensing pins -----------------------------------
 // Voltage/temp: not wired, reads disabled in SensorHub.
 #ifndef ROVER_VBAT_ADC_PIN
-#define ROVER_VBAT_ADC_PIN A0
+#define ROVER_VBAT_ADC_PIN A3   // pin 17 — not wired
 #endif
 #ifndef ROVER_TEMP_ADC_PIN
-#define ROVER_TEMP_ADC_PIN A3
+#define ROVER_TEMP_ADC_PIN A4   // pin 18 — not wired
 #endif
 
 // ---- BTS7960 current-sense IS pins -------------------------
-// Left IS → pin 23, Right IS → pin 19, Turn IS → pin 27
+// Teensy 4.1 ADC pins: A0-A17 (14-27, 38-41)
+// Left IS → A0(pin 14), Right IS → A1(pin 15), Turn IS → A2(pin 16)
 #ifndef ROVER_CURR_L_ADC_PIN
-#define ROVER_CURR_L_ADC_PIN 23
+#define ROVER_CURR_L_ADC_PIN A0   // pin 14
 #endif
 #ifndef ROVER_CURR_R_ADC_PIN
-#define ROVER_CURR_R_ADC_PIN 19
+#define ROVER_CURR_R_ADC_PIN A1   // pin 15
 #endif
 #ifndef ROVER_CURR_T_ADC_PIN
-#define ROVER_CURR_T_ADC_PIN 27
+#define ROVER_CURR_T_ADC_PIN A2   // pin 16
 #endif
 
 // ---- Calibration -------------------------------------------
