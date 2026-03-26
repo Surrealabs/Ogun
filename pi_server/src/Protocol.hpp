@@ -23,6 +23,8 @@ namespace RoverCmd {
     constexpr const char* DRIVE_TUNE = "drive_tune"; // runtime tuning for Teensy motor curve/ramp
     constexpr const char* DRIVE_TUNE_SAVE = "drive_tune_save"; // runtime apply + persist to rover.conf
     constexpr const char* REBOOT = "reboot"; // reboot the Pi
+    constexpr const char* PIN_DIAG = "pin_diag"; // read back pin states for diagnostics
+    constexpr const char* PIN_SET = "pin_set"; // set a specific pin for testing
 }
 
 // ---- Outbound status types (Pi → Phone) --------------------

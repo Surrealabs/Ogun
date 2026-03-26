@@ -549,6 +549,20 @@ static bool dispatchCommand(const std::string& json,
         return true;
     }
 
+    // --- Pin diagnostics (passthrough to Teensy) ---
+    if (type == RoverCmd::PIN_DIAG) {
+        teensy.sendRaw("{\"cmd\":\"pin_diag\"}");
+        return true;
+    }
+    if (type == RoverCmd::PIN_SET) {
+        int pin = jsonInt(json, "pin");
+        int val = jsonInt(json, "val");
+        std::ostringstream ps;
+        ps << "{\"cmd\":\"pin_set\",\"pin\":" << pin << ",\"val\":" << val << "}";
+        teensy.sendRaw(ps.str());
+        return true;
+    }
+
     // --- Reboot Pi ---
     if (type == RoverCmd::REBOOT) {
         broadcastAll(ws, webui, "{\"type\":\"update\",\"status\":\"rebooting\",\"detail\":\"Pi rebooting now...\"}");
@@ -669,6 +683,9 @@ int main(int argc, char* argv[]) {
     });
 
     // ---- Wire up sensor data → telemetry broadcast --------
+    teensy.onRawLine([&](const std::string& line) {
+        broadcastAll(ws, webuiPtr, line);
+    });
     teensy.onSensors([&](const TeensySensors& s) {
         bool sleeping = false;
         {

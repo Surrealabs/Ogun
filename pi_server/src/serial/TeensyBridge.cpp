@@ -133,7 +133,11 @@ void TeensyBridge::parseLine(const std::string& line) {
         return 0.f;
     };
     // Only parse sensor frames
-    if (line.find("\"type\":\"sensors\"") == std::string::npos) return;
+    if (line.find("\"type\":\"sensors\"") == std::string::npos) {
+        // Forward non-sensor lines (pin_diag, pin_set, etc.) to WS clients
+        if (rawLineCb_ && line.find("\"type\"") != std::string::npos) rawLineCb_(line);
+        return;
+    }
 
     TeensySensors s;
     s.enc_l   = getFloat("enc_l");

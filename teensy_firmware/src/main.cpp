@@ -251,6 +251,43 @@ void processCommand(const char* line) {
         _reboot_Teensyduino_();
         return;
     }
+    if (jsonHasKey(line, "\"pin_diag\"")) {
+        // Read back actual pin states for turn motor to diagnose hardware
+        char dbuf[300];
+        snprintf(dbuf, sizeof(dbuf),
+            "{\"type\":\"pin_diag\","
+            "\"t_rpwm_pin\":%u,\"t_lpwm_pin\":%u,\"t_en_pin\":%u,"
+            "\"t_en_read\":%d,"
+            "\"t_rpwm_read\":%d,\"t_lpwm_read\":%d,"
+            "\"l_en_pin\":%u,\"l_en_read\":%d,"
+            "\"r_en_pin\":%u,\"r_en_read\":%d,"
+            "\"armed\":%s,\"tick_running\":%s}",
+            gCfg.turn.rpwm, gCfg.turn.lpwm, gCfg.turn.en,
+            digitalRead(gCfg.turn.en),
+            digitalRead(gCfg.turn.rpwm), digitalRead(gCfg.turn.lpwm),
+            gCfg.left.en, digitalRead(gCfg.left.en),
+            gCfg.right.en, digitalRead(gCfg.right.en),
+            armed ? "true" : "false",
+            (armed && !estopped && !lowVoltLatch) ? "true" : "false");
+        Serial.println(dbuf);
+        return;
+    }
+    // Pin wiggle test: {"cmd":"pin_set","pin":26,"val":0}
+    if (jsonHasKey(line, "\"pin_set\"")) {
+        int pin = -1, val = -1;
+        if (jsonTryGetInt(line, "\"pin\"", &pin) && jsonTryGetInt(line, "\"val\"", &val)) {
+            if (pin >= 0 && pin <= 41) {
+                pinMode((uint8_t)pin, OUTPUT);
+                digitalWrite((uint8_t)pin, val ? HIGH : LOW);
+                char pbuf[100];
+                snprintf(pbuf, sizeof(pbuf),
+                    "{\"type\":\"pin_set\",\"pin\":%d,\"val\":%d,\"read\":%d}",
+                    pin, val, digitalRead((uint8_t)pin));
+                Serial.println(pbuf);
+            }
+        }
+        return;
+    }
     if (jsonHasKey(line, "\"fw_cfg_get\"")) {
         emitConfig();
         return;

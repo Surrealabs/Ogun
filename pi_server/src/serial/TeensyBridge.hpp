@@ -23,6 +23,7 @@ class TeensyBridge {
 public:
     using SensorCallback    = std::function<void(const TeensySensors&)>;
     using ReconnectCallback = std::function<void()>;
+    using RawLineCallback   = std::function<void(const std::string&)>;
 
     explicit TeensyBridge(const std::string& port, uint32_t baud = 115200);
     ~TeensyBridge();
@@ -45,6 +46,9 @@ public:
     // Called after a successful reconnect (use to re-push fw config)
     void onReconnect(ReconnectCallback cb) { reconnectCb_ = std::move(cb); }
 
+    // Called for any non-sensor line from Teensy (forwarding to WS clients)
+    void onRawLine(RawLineCallback cb) { rawLineCb_ = std::move(cb); }
+
     // Latest sensor snapshot (thread-safe)
     TeensySensors latestSensors() const;
 
@@ -66,4 +70,5 @@ private:
     TeensySensors        latest_;
     SensorCallback       sensorCb_;
     ReconnectCallback    reconnectCb_;
+    RawLineCallback      rawLineCb_;
 };
