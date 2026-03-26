@@ -501,10 +501,14 @@ canvas.joystick {
     <div class="tune-group-title">Motor Direction</div>
     <div class="tune-row"><label for="tuneInvertLeft">Invert Left Motor</label><input id="tuneInvertLeft" type="checkbox"></div>
     <div class="tune-row"><label for="tuneInvertRight">Invert Right Motor</label><input id="tuneInvertRight" type="checkbox"></div>
+    <div class="tune-row"><label for="tuneInvertTurn">Invert Turn Motor</label><input id="tuneInvertTurn" type="checkbox"></div>
 
     <div class="tune-group-title">PWM Output</div>
     <div class="tune-row"><label for="tuneMaxPwm">Max PWM (ceiling)</label><input id="tuneMaxPwm" type="range" min="0" max="255" step="1"><input class="tune-val" id="tuneMaxPwmVal" type="number" min="0" max="255" step="1" value="255"></div>
     <div class="tune-row"><label for="tuneMinPwm">Start PWM (floor)</label><input id="tuneMinPwm" type="range" min="0" max="255" step="1"><input class="tune-val" id="tuneMinPwmVal" type="number" min="0" max="255" step="1" value="0"></div>
+
+    <div class="tune-group-title">Turn Motor</div>
+    <div class="tune-row"><label for="tuneTurnMaxPwm">Turn Max PWM</label><input id="tuneTurnMaxPwm" type="range" min="0" max="255" step="1"><input class="tune-val" id="tuneTurnMaxPwmVal" type="number" min="0" max="255" step="1" value="255"></div>
 
     <div class="tune-group-title">Acceleration Ramp</div>
     <div class="tune-row"><label for="tuneRampSec">Ramp Time (sec)</label><input id="tuneRampSec" type="range" min="0.1" max="10" step="0.1"><input class="tune-val" id="tuneRampSecVal" type="number" min="0.1" max="10" step="0.1" value="1.0"></div>
@@ -632,7 +636,9 @@ const driveTuneDefault = {
   min_pwm: 0,
   ramp_sec: 1.0,
   invert_left: false,
-  invert_right: false
+  invert_right: false,
+  turn_max_pwm: 255,
+  invert_turn: false
 };
 let driveTune = { ...driveTuneDefault };
 let frontCamPort = 8081;
@@ -662,7 +668,9 @@ function tuneNormalize(raw) {
     min_pwm: tuneClamp(Math.round(Number(src.min_pwm ?? driveTune.min_pwm)), 0, 255),
     ramp_sec: tuneClamp(Number(src.ramp_sec ?? driveTune.ramp_sec), 0.1, 10),
     invert_left: tuneToBool(src.invert_left, driveTune.invert_left),
-    invert_right: tuneToBool(src.invert_right, driveTune.invert_right)
+    invert_right: tuneToBool(src.invert_right, driveTune.invert_right),
+    turn_max_pwm: tuneClamp(Math.round(Number(src.turn_max_pwm ?? driveTune.turn_max_pwm)), 0, 255),
+    invert_turn: tuneToBool(src.invert_turn, driveTune.invert_turn)
   };
 }
 
@@ -693,7 +701,9 @@ function applyTuneToInputs(tune) {
   $('tuneRampSec').value = tune.ramp_sec;
   $('tuneInvertLeft').checked = !!tune.invert_left;
   $('tuneInvertRight').checked = !!tune.invert_right;
-  ['tuneMaxPwm','tuneMinPwm','tuneRampSec'].forEach(id => {
+  $('tuneTurnMaxPwm').value = tune.turn_max_pwm;
+  $('tuneInvertTurn').checked = !!tune.invert_turn;
+  ['tuneMaxPwm','tuneMinPwm','tuneRampSec','tuneTurnMaxPwm'].forEach(id => {
     const el = $(id);
     if (el) el.dispatchEvent(new Event('input'));
   });
@@ -706,7 +716,9 @@ function collectTuneFromInputs() {
     min_pwm: $('tuneMinPwm').value,
     ramp_sec: $('tuneRampSec').value,
     invert_left: $('tuneInvertLeft').checked,
-    invert_right: $('tuneInvertRight').checked
+    invert_right: $('tuneInvertRight').checked,
+    turn_max_pwm: $('tuneTurnMaxPwm').value,
+    invert_turn: $('tuneInvertTurn').checked
   });
 }
 
@@ -784,7 +796,7 @@ function drawRampPreview() {
 function applyTune(persist = false) {
   driveTune = collectTuneFromInputs();
   sendJson({ type: persist ? 'drive_tune_save' : 'drive_tune', ...driveTune });
-  addLog(`${persist ? 'Tune save' : 'Tune apply'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}`);
+  addLog(`${persist ? 'Tune save' : 'Tune apply'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s turnMax=${driveTune.turn_max_pwm} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0} invT=${driveTune.invert_turn ? 1 : 0}`);
 }
 
 function loadCameraMap() {
@@ -1235,6 +1247,7 @@ function initPanelPrefs() {
   bindTuneSlider('tuneMaxPwm', 'tuneMaxPwmVal', 0);
   bindTuneSlider('tuneMinPwm', 'tuneMinPwmVal', 0);
   bindTuneSlider('tuneRampSec', 'tuneRampSecVal', 1);
+  bindTuneSlider('tuneTurnMaxPwm', 'tuneTurnMaxPwmVal', 0);
   applyTuneToInputs(driveTune);
   const swapBtn = $('btnTuneSwapCams');
   if (swapBtn) swapBtn.addEventListener('click', swapCameraRoles);
@@ -1437,7 +1450,7 @@ function handleMessage(raw) {
       if (!$('tune-dialog').classList.contains('hidden')) applyTuneToInputs(driveTune);
       const detail = msg.detail || '';
       const saved = !!msg.saved;
-      addLog(`Tune ${saved ? 'saved' : 'active'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0}${detail ? ` (${detail})` : ''}`);
+      addLog(`Tune ${saved ? 'saved' : 'active'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s turnMax=${driveTune.turn_max_pwm} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0} invT=${driveTune.invert_turn ? 1 : 0}${detail ? ` (${detail})` : ''}`);
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
     }

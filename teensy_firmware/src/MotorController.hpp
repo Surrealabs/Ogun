@@ -15,11 +15,13 @@
 #include <Arduino.h>
 
 struct MotorTuning {
-    uint8_t maxPwm     = 255;    // PWM ceiling (0-255)
+    uint8_t maxPwm     = 255;    // PWM ceiling (0-255) for drive motors
     uint8_t minPwm     = 0;      // PWM floor when moving (0-255)
     float   rampSec    = 1.0f;   // seconds to ramp 0 → full
     bool    invertLeft  = false;
     bool    invertRight = false;
+    uint8_t turnMaxPwm = 255;    // PWM ceiling for turn motor
+    bool    invertTurn  = false;
 };
 
 struct MotorPins {
@@ -57,14 +59,14 @@ public:
     void setTarget(float leftIn, float rightIn) {
         // Car chassis: average to single throttle, ignore turn
         float throttle = constrain((leftIn + rightIn) * 0.5f, -1.0f, 1.0f);
-        target_ = mapThrottle(throttle);
+        target_ = mapThrottle(throttle, tuning_.maxPwm);
     }
 
     // Set a new turn target for the steering motor.
     // Range -1..1 (left..right). Independent of drive throttle.
     void setTurnTarget(float turnIn) {
         turnIn = constrain(turnIn, -1.0f, 1.0f);
-        turnTarget_ = mapThrottle(turnIn);
+        turnTarget_ = mapThrottle(turnIn, tuning_.turnMaxPwm);
     }
 
     // Call every loop iteration. Advances the slew ramp by dt and
@@ -82,7 +84,7 @@ public:
 
         setMotor(left_,  tuning_.invertLeft  ? -output_ : output_);
         setMotor(right_, tuning_.invertRight ? -output_ : output_);
-        setMotor(turn_,  turnOutput_);
+        setMotor(turn_,  tuning_.invertTurn  ? -turnOutput_ : turnOutput_);
     }
 
     // Coast to zero: set target to 0, let slew handle it gently.
@@ -111,12 +113,12 @@ public:
 
 private:
     // Map joystick -1..1 → normalized output incorporating min/max PWM
-    float mapThrottle(float input) const {
+    float mapThrottle(float input, uint8_t ceiling) const {
         if (fabsf(input) <= MOTOR_ZERO_EPSILON) return 0.0f;
         const float sign = (input < 0.0f) ? -1.0f : 1.0f;
         const float mag = fabsf(input);
         const float minF = tuning_.minPwm / 255.0f;
-        const float maxF = tuning_.maxPwm / 255.0f;
+        const float maxF = ceiling / 255.0f;
         if (maxF <= 0.0f) return 0.0f;
         const float mapped = minF + mag * (maxF - minF);
         return sign * constrain(mapped, 0.0f, 1.0f);
@@ -147,7 +149,7 @@ private:
         if (fabsf(speed) <= MOTOR_ZERO_EPSILON) {
             analogWrite(m.rpwm, 0);
             analogWrite(m.lpwm, 0);
-            digitalWrite(m.en, HIGH);  // brake mode
+            digitalWrite(m.en, LOW);   // disable — true off
             return;
         }
         digitalWrite(m.en, HIGH);

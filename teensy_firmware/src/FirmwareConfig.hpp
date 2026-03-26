@@ -110,6 +110,12 @@ namespace fwcfg {
 #ifndef ROVER_RAMP_SEC
 #define ROVER_RAMP_SEC 1.0f
 #endif
+#ifndef ROVER_TURN_MAX_PWM
+#define ROVER_TURN_MAX_PWM 255
+#endif
+#ifndef ROVER_INVERT_TURN
+#define ROVER_INVERT_TURN 0
+#endif
 // (removed — replaced by ROVER_RAMP_SEC above)
 
 // ---- Safety -------------------------------------------------
@@ -161,6 +167,8 @@ constexpr uint32_t TELEM_INTERVAL_MS = ROVER_TELEM_INTERVAL_MS;
 constexpr uint8_t MAX_PWM       = ROVER_MAX_PWM;
 constexpr uint8_t MIN_PWM       = ROVER_MIN_PWM;
 constexpr float   RAMP_SEC      = ROVER_RAMP_SEC;
+constexpr uint8_t TURN_MAX_PWM  = ROVER_TURN_MAX_PWM;
+constexpr bool    INVERT_TURN   = ROVER_INVERT_TURN;
 
 constexpr float LOW_VOLTAGE_CUTOFF = ROVER_LOW_VOLTAGE_CUTOFF;
 constexpr float LOW_VOLTAGE_RESUME = ROVER_LOW_VOLTAGE_RESUME;

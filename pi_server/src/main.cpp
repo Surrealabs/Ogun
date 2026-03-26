@@ -97,6 +97,7 @@ struct ControlState {
     bool estopLatched{false};
     bool invertLeftMotor{false};
     bool invertRightMotor{false};
+    bool invertTurnMotor{false};
 };
 
 static std::string powerStateJson(const PowerState& p) {
@@ -122,6 +123,8 @@ static bool saveDriveTuneConfigFile(const std::string& path,
                                     float rampSec,
                                     bool invertLeft,
                                     bool invertRight,
+                                    int turnMaxPwm,
+                                    bool invertTurn,
                                     std::string* err)
 {
     auto trim = [](std::string s) {
@@ -149,7 +152,9 @@ static bool saveDriveTuneConfigFile(const std::string& path,
         {"teensy_min_pwm", keyIntLine("teensy_min_pwm", minPwm)},
         {"teensy_ramp_sec", keyFloatLine("teensy_ramp_sec", rampSec)},
         {"invert_left_motor", keyBoolLine("invert_left_motor", invertLeft)},
-        {"invert_right_motor", keyBoolLine("invert_right_motor", invertRight)}
+        {"invert_right_motor", keyBoolLine("invert_right_motor", invertRight)},
+        {"teensy_turn_max_pwm", keyIntLine("teensy_turn_max_pwm", turnMaxPwm)},
+        {"invert_turn_motor", keyBoolLine("invert_turn_motor", invertTurn)}
     };
     // Remove legacy keys
     std::vector<std::string> legacyKeys = {
@@ -242,6 +247,8 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"ramp_sec\":" << cfg.teensy_ramp_sec << ","
        << "\"invert_left\":" << (cfg.invert_left_motor ? 1 : 0) << ","
        << "\"invert_right\":" << (cfg.invert_right_motor ? 1 : 0) << ","
+       << "\"turn_max_pwm\":" << cfg.teensy_turn_max_pwm << ","
+       << "\"invert_turn\":" << (cfg.invert_turn_motor ? 1 : 0) << ","
        << "\"watchdog_ms\":" << cfg.teensy_watchdog_ms << ","
        << "\"telem_ms\":" << cfg.teensy_telem_interval_ms << ","
        << "\"input_deadband\":" << cfg.deadband << ","
@@ -343,12 +350,15 @@ static bool dispatchCommand(const std::string& json,
         const int maxPwm = std::max(0, std::min(255, jsonInt(json, "max_pwm")));
         const int minPwm = std::max(0, std::min(255, jsonInt(json, "min_pwm")));
         const float rampSec = std::max(0.05f, std::min(30.0f, jsonFloat(json, "ramp_sec")));
+        const int turnMaxPwm = std::max(0, std::min(255, jsonInt(json, "turn_max_pwm")));
         bool currentInvertLeft = cfg.invert_left_motor;
         bool currentInvertRight = cfg.invert_right_motor;
+        bool currentInvertTurn = cfg.invert_turn_motor;
         {
             std::lock_guard<std::mutex> ck(controlMtx);
             currentInvertLeft = control.invertLeftMotor;
             currentInvertRight = control.invertRightMotor;
+            currentInvertTurn = control.invertTurnMotor;
         }
         const bool invertLeft = (json.find("\"invert_left\"") != std::string::npos)
             ? jsonBool(json, "invert_left")
@@ -356,11 +366,15 @@ static bool dispatchCommand(const std::string& json,
         const bool invertRight = (json.find("\"invert_right\"") != std::string::npos)
             ? jsonBool(json, "invert_right")
             : currentInvertRight;
+        const bool invertTurn = (json.find("\"invert_turn\"") != std::string::npos)
+            ? jsonBool(json, "invert_turn")
+            : currentInvertTurn;
 
         {
             std::lock_guard<std::mutex> ck(controlMtx);
             control.invertLeftMotor = invertLeft;
             control.invertRightMotor = invertRight;
+            control.invertTurnMotor = invertTurn;
         }
 
         std::ostringstream fw;
@@ -370,7 +384,9 @@ static bool dispatchCommand(const std::string& json,
            << "\"min_pwm\":" << minPwm << ","
            << "\"ramp_sec\":" << rampSec << ","
            << "\"invert_left\":" << (invertLeft ? 1 : 0) << ","
-           << "\"invert_right\":" << (invertRight ? 1 : 0)
+           << "\"invert_right\":" << (invertRight ? 1 : 0) << ","
+           << "\"turn_max_pwm\":" << turnMaxPwm << ","
+           << "\"invert_turn\":" << (invertTurn ? 1 : 0)
            << "}";
         teensy.sendRaw(fw.str());
 
@@ -381,6 +397,7 @@ static bool dispatchCommand(const std::string& json,
                 "/etc/rover/rover.conf",
                 maxPwm, minPwm, rampSec,
                 invertLeft, invertRight,
+                turnMaxPwm, invertTurn,
                 &saveErr);
         }
 
@@ -400,7 +417,9 @@ static bool dispatchCommand(const std::string& json,
             << "\"min_pwm\":" << minPwm << ","
             << "\"ramp_sec\":" << rampSec << ","
             << "\"invert_left\":" << (invertLeft ? "true" : "false") << ","
-            << "\"invert_right\":" << (invertRight ? "true" : "false")
+            << "\"invert_right\":" << (invertRight ? "true" : "false") << ","
+            << "\"turn_max_pwm\":" << turnMaxPwm << ","
+            << "\"invert_turn\":" << (invertTurn ? "true" : "false")
             << "}";
         broadcastAll(ws, webui, ack.str());
         if (webui) webui->setLatestTune(ack.str());
@@ -602,6 +621,7 @@ int main(int argc, char* argv[]) {
     std::mutex controlMtx;
     control.invertLeftMotor = cfg.invert_left_motor;
     control.invertRightMotor = cfg.invert_right_motor;
+    control.invertTurnMotor = cfg.invert_turn_motor;
 
     // ---- Seed initial tune so new WS clients get it immediately ----
     {
@@ -612,7 +632,9 @@ int main(int argc, char* argv[]) {
           << "\"min_pwm\":" << cfg.teensy_min_pwm << ","
           << "\"ramp_sec\":" << cfg.teensy_ramp_sec << ","
           << "\"invert_left\":" << (cfg.invert_left_motor ? "true" : "false") << ","
-          << "\"invert_right\":" << (cfg.invert_right_motor ? "true" : "false")
+          << "\"invert_right\":" << (cfg.invert_right_motor ? "true" : "false") << ","
+          << "\"turn_max_pwm\":" << cfg.teensy_turn_max_pwm << ","
+          << "\"invert_turn\":" << (cfg.invert_turn_motor ? "true" : "false")
           << "}";
         webui.setLatestTune(t.str());
     }

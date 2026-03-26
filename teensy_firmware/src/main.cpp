@@ -45,7 +45,11 @@ struct RuntimeConfig {
     MotorTuning motorTuning{
         fwcfg::MAX_PWM,
         fwcfg::MIN_PWM,
-        fwcfg::RAMP_SEC
+        fwcfg::RAMP_SEC,
+        false,           // invertLeft
+        false,           // invertRight
+        fwcfg::TURN_MAX_PWM,
+        fwcfg::INVERT_TURN
     };
     float lowVoltageCutoff{fwcfg::LOW_VOLTAGE_CUTOFF};
     float lowVoltageResume{fwcfg::LOW_VOLTAGE_RESUME};
@@ -155,6 +159,7 @@ static void emitConfig() {
         "\"watchdog_ms\":%lu,\"telem_ms\":%lu,"
         "\"max_pwm\":%u,\"min_pwm\":%u,\"ramp_sec\":%.3f,"
         "\"invert_left\":%d,\"invert_right\":%d,"
+        "\"turn_max_pwm\":%u,\"invert_turn\":%d,"
         "\"low_volt_cutoff\":%.2f,\"low_volt_resume\":%.2f,"
         "\"input_deadband\":%.3f,\"require_arm\":%s,"
         "\"armed\":%s,\"estopped\":%s,\"low_volt_latch\":%s,"
@@ -169,6 +174,7 @@ static void emitConfig() {
         (unsigned long)gCfg.watchdogMs, (unsigned long)gCfg.telemIntervalMs,
         gCfg.motorTuning.maxPwm, gCfg.motorTuning.minPwm, gCfg.motorTuning.rampSec,
         (int)gCfg.motorTuning.invertLeft, (int)gCfg.motorTuning.invertRight,
+        gCfg.motorTuning.turnMaxPwm, (int)gCfg.motorTuning.invertTurn,
         gCfg.lowVoltageCutoff, gCfg.lowVoltageResume,
         gCfg.inputDeadband, gCfg.requireArm ? "true" : "false",
         armed ? "true" : "false", estopped ? "true" : "false",
@@ -296,6 +302,8 @@ void processCommand(const char* line) {
 
         if (jsonTryGetInt(line, "\"invert_left\"", &vi)) cfg.motorTuning.invertLeft = (vi != 0);
         if (jsonTryGetInt(line, "\"invert_right\"", &vi)) cfg.motorTuning.invertRight = (vi != 0);
+        if (jsonTryGetInt(line, "\"turn_max_pwm\"", &vi)) cfg.motorTuning.turnMaxPwm = (uint8_t)constrain(vi, 0, 255);
+        if (jsonTryGetInt(line, "\"invert_turn\"", &vi)) cfg.motorTuning.invertTurn = (vi != 0);
 
         if (jsonTryGetFloat(line, "\"low_volt_cutoff\"", &vf)) cfg.lowVoltageCutoff = clampFloat(vf, 0.0f, 30.0f);
         if (jsonTryGetFloat(line, "\"low_volt_resume\"", &vf)) cfg.lowVoltageResume = clampFloat(vf, 0.0f, 30.0f);
