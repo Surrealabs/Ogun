@@ -1675,8 +1675,9 @@ function updateKeyDrive() {
   };
   if (pressed('forward') || keysDown.has('ArrowUp'))    y += 1;
   if (pressed('backward') || keysDown.has('ArrowDown'))  y -= 1;
-  // Turn keys ignored — car chassis (no tank steering)
-  leftY = y; rightX = 0;
+  if (pressed('left')  || keysDown.has('ArrowLeft'))   r -= 1;
+  if (pressed('right') || keysDown.has('ArrowRight'))  r += 1;
+  leftY = y; rightX = r;
   sendDrive();
 }
 
@@ -1693,11 +1694,12 @@ function pollGamepad() {
   $('gamepadIcon').classList.toggle('active', !!gp);
   if (!gp) { requestAnimationFrame(pollGamepad); return; }
 
-  // Standard mapping: left stick Y = axis 1
+  // Standard mapping: left stick Y = axis 1, right stick X = axis 2
   const rawY = -gp.axes[1]; // invert so push-forward = positive
+  const rawRX = gp.axes[2]; // right stick X for turning
   const deadzone = 0.08;
-  leftY  = Math.abs(rawY) < deadzone ? 0 : rawY;
-  rightX = 0; // Turn ignored — car chassis
+  leftY  = Math.abs(rawY)  < deadzone ? 0 : rawY;
+  rightX = Math.abs(rawRX) < deadzone ? 0 : rawRX;
   sendDrive();
 
   // Buttons: B = estop
