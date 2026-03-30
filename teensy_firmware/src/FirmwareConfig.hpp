@@ -115,6 +115,12 @@ namespace fwcfg {
 #ifndef ROVER_INVERT_TURN
 #define ROVER_INVERT_TURN 0
 #endif
+#ifndef ROVER_TURN_SLOWDOWN
+#define ROVER_TURN_SLOWDOWN 0.5f  // 0-1: drive reduction at full turn
+#endif
+#ifndef ROVER_TURN_RAMP_SEC
+#define ROVER_TURN_RAMP_SEC 0.1f  // near-instant turn response
+#endif
 // (removed — replaced by ROVER_RAMP_SEC above)
 
 // ---- Safety -------------------------------------------------
@@ -168,6 +174,8 @@ constexpr uint8_t MIN_PWM       = ROVER_MIN_PWM;
 constexpr float   RAMP_SEC      = ROVER_RAMP_SEC;
 constexpr uint8_t TURN_MAX_PWM  = ROVER_TURN_MAX_PWM;
 constexpr bool    INVERT_TURN   = ROVER_INVERT_TURN;
+constexpr float   TURN_SLOWDOWN = ROVER_TURN_SLOWDOWN;
+constexpr float   TURN_RAMP_SEC = ROVER_TURN_RAMP_SEC;
 
 constexpr float LOW_VOLTAGE_CUTOFF = ROVER_LOW_VOLTAGE_CUTOFF;
 constexpr float LOW_VOLTAGE_RESUME = ROVER_LOW_VOLTAGE_RESUME;

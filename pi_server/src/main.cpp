@@ -125,6 +125,8 @@ static bool saveDriveTuneConfigFile(const std::string& path,
                                     bool invertRight,
                                     int turnMaxPwm,
                                     bool invertTurn,
+                                    float turnSlowdown,
+                                    float turnRampSec,
                                     std::string* err)
 {
     auto trim = [](std::string s) {
@@ -154,7 +156,9 @@ static bool saveDriveTuneConfigFile(const std::string& path,
         {"invert_left_motor", keyBoolLine("invert_left_motor", invertLeft)},
         {"invert_right_motor", keyBoolLine("invert_right_motor", invertRight)},
         {"teensy_turn_max_pwm", keyIntLine("teensy_turn_max_pwm", turnMaxPwm)},
-        {"invert_turn_motor", keyBoolLine("invert_turn_motor", invertTurn)}
+        {"invert_turn_motor", keyBoolLine("invert_turn_motor", invertTurn)},
+        {"teensy_turn_slowdown", keyFloatLine("teensy_turn_slowdown", turnSlowdown)},
+        {"teensy_turn_ramp_sec", keyFloatLine("teensy_turn_ramp_sec", turnRampSec)}
     };
     // Remove legacy keys
     std::vector<std::string> legacyKeys = {
@@ -249,6 +253,8 @@ static std::string teensyFwConfigCommand(const RoverConfig& cfg) {
        << "\"invert_right\":" << (cfg.invert_right_motor ? 1 : 0) << ","
        << "\"turn_max_pwm\":" << cfg.teensy_turn_max_pwm << ","
        << "\"invert_turn\":" << (cfg.invert_turn_motor ? 1 : 0) << ","
+       << "\"turn_slowdown\":" << cfg.teensy_turn_slowdown << ","
+       << "\"turn_ramp_sec\":" << cfg.teensy_turn_ramp_sec << ","
        << "\"watchdog_ms\":" << cfg.teensy_watchdog_ms << ","
        << "\"telem_ms\":" << cfg.teensy_telem_interval_ms << ","
        << "\"input_deadband\":" << cfg.deadband << ","
@@ -351,6 +357,8 @@ static bool dispatchCommand(const std::string& json,
         const int minPwm = std::max(0, std::min(255, jsonInt(json, "min_pwm")));
         const float rampSec = std::max(0.05f, std::min(30.0f, jsonFloat(json, "ramp_sec")));
         const int turnMaxPwm = std::max(0, std::min(255, jsonInt(json, "turn_max_pwm")));
+        const float turnSlowdown = std::max(0.0f, std::min(1.0f, jsonFloat(json, "turn_slowdown")));
+        const float turnRampSec = std::max(0.01f, std::min(10.0f, jsonFloat(json, "turn_ramp_sec")));
         bool currentInvertLeft = cfg.invert_left_motor;
         bool currentInvertRight = cfg.invert_right_motor;
         bool currentInvertTurn = cfg.invert_turn_motor;
@@ -386,7 +394,9 @@ static bool dispatchCommand(const std::string& json,
            << "\"invert_left\":" << (invertLeft ? 1 : 0) << ","
            << "\"invert_right\":" << (invertRight ? 1 : 0) << ","
            << "\"turn_max_pwm\":" << turnMaxPwm << ","
-           << "\"invert_turn\":" << (invertTurn ? 1 : 0)
+           << "\"invert_turn\":" << (invertTurn ? 1 : 0) << ","
+           << "\"turn_slowdown\":" << turnSlowdown << ","
+           << "\"turn_ramp_sec\":" << turnRampSec
            << "}";
         teensy.sendRaw(fw.str());
 
@@ -398,6 +408,7 @@ static bool dispatchCommand(const std::string& json,
                 maxPwm, minPwm, rampSec,
                 invertLeft, invertRight,
                 turnMaxPwm, invertTurn,
+                turnSlowdown, turnRampSec,
                 &saveErr);
         }
 
@@ -419,7 +430,9 @@ static bool dispatchCommand(const std::string& json,
             << "\"invert_left\":" << (invertLeft ? "true" : "false") << ","
             << "\"invert_right\":" << (invertRight ? "true" : "false") << ","
             << "\"turn_max_pwm\":" << turnMaxPwm << ","
-            << "\"invert_turn\":" << (invertTurn ? "true" : "false")
+            << "\"invert_turn\":" << (invertTurn ? "true" : "false") << ","
+            << "\"turn_slowdown\":" << turnSlowdown << ","
+            << "\"turn_ramp_sec\":" << turnRampSec
             << "}";
         broadcastAll(ws, webui, ack.str());
         if (webui) webui->setLatestTune(ack.str());
@@ -648,7 +661,9 @@ int main(int argc, char* argv[]) {
           << "\"invert_left\":" << (cfg.invert_left_motor ? "true" : "false") << ","
           << "\"invert_right\":" << (cfg.invert_right_motor ? "true" : "false") << ","
           << "\"turn_max_pwm\":" << cfg.teensy_turn_max_pwm << ","
-          << "\"invert_turn\":" << (cfg.invert_turn_motor ? "true" : "false")
+          << "\"invert_turn\":" << (cfg.invert_turn_motor ? "true" : "false") << ","
+          << "\"turn_slowdown\":" << cfg.teensy_turn_slowdown << ","
+          << "\"turn_ramp_sec\":" << cfg.teensy_turn_ramp_sec
           << "}";
         webui.setLatestTune(t.str());
     }

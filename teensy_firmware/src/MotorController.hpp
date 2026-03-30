@@ -22,6 +22,8 @@ struct MotorTuning {
     bool    invertRight = false;
     uint8_t turnMaxPwm = 255;    // PWM ceiling for turn motor
     bool    invertTurn  = false;
+    float   turnSlowdown = 0.5f; // 0-1: fraction to reduce drive at full turn
+    float   turnRampSec = 0.1f;  // seconds to ramp turn motor (fast by default)
 };
 
 struct MotorPins {
@@ -79,11 +81,16 @@ public:
         if (dt > 0.25f) dt = 0.25f;
         lastUpdateMs_ = now;
 
-        output_ = slew(output_, target_, dt);
-        turnOutput_ = slew(turnOutput_, turnTarget_, dt);
+        output_ = slew(output_, target_, dt, rampRate());
+        turnOutput_ = slew(turnOutput_, turnTarget_, dt, turnRampRate());
 
-        setMotor(left_,  tuning_.invertLeft  ? -output_ : output_);
-        setMotor(right_, tuning_.invertRight ? -output_ : output_);
+        // Reduce drive power proportionally to turn magnitude
+        float turnMag = fabsf(turnOutput_);
+        float driveScale = 1.0f - tuning_.turnSlowdown * turnMag;
+        float scaledOut = output_ * driveScale;
+
+        setMotor(left_,  tuning_.invertLeft  ? -scaledOut : scaledOut);
+        setMotor(right_, tuning_.invertRight ? -scaledOut : scaledOut);
         setMotor(turn_,  tuning_.invertTurn  ? -turnOutput_ : turnOutput_);
     }
 
@@ -125,24 +132,24 @@ private:
     }
 
     // Slew with direction-reversal protection
-    float slew(float current, float target, float dt) const {
+    float slew(float current, float target, float dt, float rate) const {
         // Force decel through zero on direction reversal
         if (current > MOTOR_ZERO_EPSILON && target < -MOTOR_ZERO_EPSILON) {
-            float next = current - rampRate() * dt;
+            float next = current - rate * dt;
             return (next <= 0.0f) ? 0.0f : next;
         }
         if (current < -MOTOR_ZERO_EPSILON && target > MOTOR_ZERO_EPSILON) {
-            float next = current + rampRate() * dt;
+            float next = current + rate * dt;
             return (next >= 0.0f) ? 0.0f : next;
         }
         const float delta = target - current;
-        const float maxStep = rampRate() * dt;
+        const float maxStep = rate * dt;
         if (fabsf(delta) <= maxStep) return target;
         return current + ((delta > 0.0f) ? maxStep : -maxStep);
     }
 
-    // Single rate for both accel and decel — gentle in both directions
     float rampRate() const { return 1.0f / max(0.05f, tuning_.rampSec); }
+    float turnRampRate() const { return 1.0f / max(0.05f, tuning_.turnRampSec); }
 
     void setMotor(const MotorPins& m, float speed) {
         speed = constrain(speed, -1.f, 1.f);

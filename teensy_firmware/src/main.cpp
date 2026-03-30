@@ -49,7 +49,9 @@ struct RuntimeConfig {
         false,           // invertLeft
         false,           // invertRight
         fwcfg::TURN_MAX_PWM,
-        fwcfg::INVERT_TURN
+        fwcfg::INVERT_TURN,
+        fwcfg::TURN_SLOWDOWN,
+        fwcfg::TURN_RAMP_SEC
     };
     float lowVoltageCutoff{fwcfg::LOW_VOLTAGE_CUTOFF};
     float lowVoltageResume{fwcfg::LOW_VOLTAGE_RESUME};
@@ -147,7 +149,7 @@ static void applyRuntimeConfig(const RuntimeConfig& cfg) {
 }
 
 static void emitConfig() {
-    char buf[600];
+    char buf[700];
     snprintf(buf, sizeof(buf),
         "{\"type\":\"fw_cfg\","
         "\"l_rpwm\":%u,\"l_lpwm\":%u,\"l_en\":%u,"
@@ -160,6 +162,7 @@ static void emitConfig() {
         "\"max_pwm\":%u,\"min_pwm\":%u,\"ramp_sec\":%.3f,"
         "\"invert_left\":%d,\"invert_right\":%d,"
         "\"turn_max_pwm\":%u,\"invert_turn\":%d,"
+        "\"turn_slowdown\":%.2f,\"turn_ramp_sec\":%.3f,"
         "\"low_volt_cutoff\":%.2f,\"low_volt_resume\":%.2f,"
         "\"input_deadband\":%.3f,\"require_arm\":%s,"
         "\"armed\":%s,\"estopped\":%s,\"low_volt_latch\":%s,"
@@ -175,6 +178,7 @@ static void emitConfig() {
         gCfg.motorTuning.maxPwm, gCfg.motorTuning.minPwm, gCfg.motorTuning.rampSec,
         (int)gCfg.motorTuning.invertLeft, (int)gCfg.motorTuning.invertRight,
         gCfg.motorTuning.turnMaxPwm, (int)gCfg.motorTuning.invertTurn,
+        gCfg.motorTuning.turnSlowdown, gCfg.motorTuning.turnRampSec,
         gCfg.lowVoltageCutoff, gCfg.lowVoltageResume,
         gCfg.inputDeadband, gCfg.requireArm ? "true" : "false",
         armed ? "true" : "false", estopped ? "true" : "false",
@@ -341,6 +345,8 @@ void processCommand(const char* line) {
         if (jsonTryGetInt(line, "\"invert_right\"", &vi)) cfg.motorTuning.invertRight = (vi != 0);
         if (jsonTryGetInt(line, "\"turn_max_pwm\"", &vi)) cfg.motorTuning.turnMaxPwm = (uint8_t)constrain(vi, 0, 255);
         if (jsonTryGetInt(line, "\"invert_turn\"", &vi)) cfg.motorTuning.invertTurn = (vi != 0);
+        if (jsonTryGetFloat(line, "\"turn_slowdown\"", &vf)) cfg.motorTuning.turnSlowdown = clampFloat(vf, 0.0f, 1.0f);
+        if (jsonTryGetFloat(line, "\"turn_ramp_sec\"", &vf)) cfg.motorTuning.turnRampSec = clampFloat(vf, 0.01f, 10.0f);
 
         if (jsonTryGetFloat(line, "\"low_volt_cutoff\"", &vf)) cfg.lowVoltageCutoff = clampFloat(vf, 0.0f, 30.0f);
         if (jsonTryGetFloat(line, "\"low_volt_resume\"", &vf)) cfg.lowVoltageResume = clampFloat(vf, 0.0f, 30.0f);
