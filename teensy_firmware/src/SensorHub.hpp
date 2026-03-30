@@ -45,8 +45,13 @@ public:
         currentR_   = (rawR - cfg_.currZeroMv) / cfg_.currSensMvPerA;
 
         // Turning motor current sense
-        float rawT  = (float)analogRead(cfg_.currTAdcPin) / 4095.f * 3300.f; // mV
-        currentT_   = (rawT - cfg_.currZeroMv) / cfg_.currSensMvPerA;
+        // Pin 13 (built-in LED) is not analog-capable; skip read if so.
+        if (cfg_.currTAdcPin != 13) {
+            float rawT  = (float)analogRead(cfg_.currTAdcPin) / 4095.f * 3300.f;
+            currentT_   = (rawT - cfg_.currZeroMv) / cfg_.currSensMvPerA;
+        } else {
+            currentT_ = 0.f;
+        }
     }
 
     void toJson(char* buf, size_t bufLen) {
