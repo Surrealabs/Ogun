@@ -105,8 +105,14 @@ bool TeensyBridge::writeLine(const std::string& s) {
     struct pollfd pfd{};
     pfd.fd = fd_;
     pfd.events = POLLOUT;
-    int ready = ::poll(&pfd, 1, 0);
-    if (ready <= 0 || (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+    int ready = ::poll(&pfd, 1, 100);
+    if (ready < 0) {
+        if (errno == EINTR) return false;
+        disconnectLocked();
+        return false;
+    }
+    if (ready == 0) return false;
+    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
         disconnectLocked();
         return false;
     }
