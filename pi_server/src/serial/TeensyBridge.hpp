@@ -58,6 +58,7 @@ private:
     bool writeLine(const std::string& s);
     bool configurePort(speed_t baud);
     bool tryReopen();   // attempt to reopen the serial port
+    void disconnectLocked();
 
     std::string       port_;
     uint32_t          baud_;

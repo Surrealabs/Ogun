@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <iostream>
 #include <sstream>
+#include <poll.h>
 // Simple JSON parse helpers (no external dependency)
 #include <regex>
 
@@ -38,13 +39,20 @@ bool TeensyBridge::configurePort(speed_t baud) {
     tty.c_iflag &= ~(IXON | IXOFF | IXANY);
     tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
     tty.c_oflag &= ~OPOST;
-    tty.c_cc[VMIN]  = 1;
-    tty.c_cc[VTIME] = 0;
+    tty.c_cc[VMIN]  = 0;
+    tty.c_cc[VTIME] = 1;
     return tcsetattr(fd_, TCSANOW, &tty) == 0;
 }
 
+void TeensyBridge::disconnectLocked() {
+    if (fd_ >= 0) {
+        ::close(fd_);
+        fd_ = -1;
+    }
+}
+
 bool TeensyBridge::open() {
-    fd_ = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    fd_ = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK | O_SYNC);
     if (fd_ < 0) {
         std::cerr << "[teensy] open " << port_ << " failed: " << strerror(errno) << "\n";
     } else if (!configurePort(baudRate(baud_))) {
@@ -64,7 +72,7 @@ void TeensyBridge::close() {
     running_ = false;
     {
         std::lock_guard<std::mutex> lk(writeMtx_);
-        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+        disconnectLocked();
     }
     if (rxThread_.joinable()) rxThread_.join();
 }
@@ -73,9 +81,9 @@ bool TeensyBridge::tryReopen() {
     // Close stale fd if any
     {
         std::lock_guard<std::mutex> lk(writeMtx_);
-        if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+        disconnectLocked();
     }
-    int newFd = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    int newFd = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK | O_SYNC);
     if (newFd < 0) return false;
     {
         std::lock_guard<std::mutex> lk(writeMtx_);
@@ -83,7 +91,7 @@ bool TeensyBridge::tryReopen() {
     }
     if (!configurePort(baudRate(baud_))) {
         std::lock_guard<std::mutex> lk(writeMtx_);
-        ::close(fd_); fd_ = -1;
+        disconnectLocked();
         return false;
     }
     std::cout << "[teensy] reconnected on " << port_ << "\n";
@@ -93,8 +101,23 @@ bool TeensyBridge::tryReopen() {
 bool TeensyBridge::writeLine(const std::string& s) {
     std::lock_guard<std::mutex> lk(writeMtx_);
     if (fd_ < 0) return false;
+
+    struct pollfd pfd{};
+    pfd.fd = fd_;
+    pfd.events = POLLOUT;
+    int ready = ::poll(&pfd, 1, 0);
+    if (ready <= 0 || (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+        disconnectLocked();
+        return false;
+    }
+
     std::string line = s + "\n";
     ssize_t n = ::write(fd_, line.c_str(), line.size());
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return false;
+    if (n < 0 || n != (ssize_t)line.size()) {
+        disconnectLocked();
+        return false;
+    }
     return n == (ssize_t)line.size();
 }
 
@@ -175,11 +198,18 @@ void TeensyBridge::rxThread() {
         ssize_t n = ::read(curFd, &ch, 1);
         if (n <= 0) {
             if (!running_) break;
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+                std::cerr << "[teensy] read error: " << strerror(errno) << ", will retry...\n";
+                std::lock_guard<std::mutex> lk(writeMtx_);
+                disconnectLocked();
+                errCount = 0;
+                continue;
+            }
             if (++errCount > 50) {
                 // Sustained read failures — Teensy likely disconnected
                 std::cerr << "[teensy] lost connection, will retry...\n";
                 std::lock_guard<std::mutex> lk(writeMtx_);
-                if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+                disconnectLocked();
                 errCount = 0;
             } else {
                 usleep(10000);
