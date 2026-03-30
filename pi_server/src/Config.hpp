@@ -14,15 +14,15 @@ struct RoverConfig {
     bool        teensy_push_fw_config = true;
 
     // --- Teensy firmware runtime config (sent over serial on boot) ---
-    int teensy_l_rpwm_pin = 20;
-    int teensy_l_lpwm_pin = 21;
-    int teensy_l_en_pin   = 22;
-    int teensy_r_rpwm_pin = 16;
-    int teensy_r_lpwm_pin = 17;
-    int teensy_r_en_pin   = 18;
-    int teensy_t_rpwm_pin = 24;
-    int teensy_t_lpwm_pin = 25;
-    int teensy_t_en_pin   = 26;
+    int teensy_l_rpwm_pin = 23;
+    int teensy_l_lpwm_pin = 22;
+    int teensy_l_en_pin   = 20;
+    int teensy_r_rpwm_pin = 19;
+    int teensy_r_lpwm_pin = 18;
+    int teensy_r_en_pin   = 16;
+    int teensy_t_rpwm_pin = 15;
+    int teensy_t_lpwm_pin = 14;
+    int teensy_t_en_pin   = 41;
 
     int teensy_enc_la_pin = 2;
     int teensy_enc_lb_pin = 3;
@@ -30,9 +30,9 @@ struct RoverConfig {
     int teensy_enc_rb_pin = 5;
 
     int teensy_vbat_adc_pin = 14; // A0 on Teensy (not wired)
-    int teensy_curr_l_adc_pin = 23; // left BTS7960 IS
-    int teensy_curr_r_adc_pin = 19; // right BTS7960 IS
-    int teensy_curr_t_adc_pin = 27; // turning motor BTS7960 IS
+    int teensy_curr_l_adc_pin = 21; // left BTS7960 IS
+    int teensy_curr_r_adc_pin = 17; // right BTS7960 IS
+    int teensy_curr_t_adc_pin = 13; // turning motor BTS7960 IS
     int teensy_temp_adc_pin = 23; // not wired
 
     float teensy_vbat_div_ratio = 4.03f;

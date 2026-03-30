@@ -13,15 +13,15 @@ serial_baud    = 115200
 teensy_push_fw_config = true
 
 # Teensy firmware motor/encoder pin map (digital pins, Teensy 4.1 terminal breakout)
-teensy_l_rpwm_pin = 20
-teensy_l_lpwm_pin = 21
-teensy_l_en_pin   = 22
-teensy_r_rpwm_pin = 16
-teensy_r_lpwm_pin = 17
-teensy_r_en_pin   = 18
-teensy_t_rpwm_pin = 24
-teensy_t_lpwm_pin = 25
-teensy_t_en_pin   = 26
+teensy_l_rpwm_pin = 23
+teensy_l_lpwm_pin = 22
+teensy_l_en_pin   = 20
+teensy_r_rpwm_pin = 19
+teensy_r_lpwm_pin = 18
+teensy_r_en_pin   = 16
+teensy_t_rpwm_pin = 15
+teensy_t_lpwm_pin = 14
+teensy_t_en_pin   = 41
 teensy_enc_la_pin = 2
 teensy_enc_lb_pin = 3
 teensy_enc_ra_pin = 4
@@ -29,9 +29,9 @@ teensy_enc_rb_pin = 5
 
 # Teensy analog sensor pin map
 teensy_vbat_adc_pin = 14
-teensy_curr_l_adc_pin = 23
-teensy_curr_r_adc_pin = 19
-teensy_curr_t_adc_pin = 27
+teensy_curr_l_adc_pin = 21
+teensy_curr_r_adc_pin = 17
+teensy_curr_t_adc_pin = 13
 teensy_temp_adc_pin = 23
 
 # Teensy sensor calibration + timings

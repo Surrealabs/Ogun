@@ -180,7 +180,6 @@ void TeensyBridge::parseLine(const std::string& line) {
 void TeensyBridge::rxThread() {
     std::string buf;
     char ch;
-    int errCount = 0;
     while (running_) {
         int curFd;
         { std::lock_guard<std::mutex> lk(writeMtx_); curFd = fd_; }
@@ -189,12 +188,31 @@ void TeensyBridge::rxThread() {
             usleep(1000000);
             if (!running_) break;
             if (tryReopen()) {
-                errCount = 0;
                 buf.clear();
                 if (reconnectCb_) reconnectCb_();
             }
             continue;
         }
+
+        struct pollfd pfd{};
+        pfd.fd = curFd;
+        pfd.events = POLLIN;
+        int ready = ::poll(&pfd, 1, 250);
+        if (ready == 0) continue;  // idle, not a disconnect
+        if (ready < 0) {
+            if (errno == EINTR) continue;
+            std::cerr << "[teensy] poll error: " << strerror(errno) << ", will retry...\n";
+            std::lock_guard<std::mutex> lk(writeMtx_);
+            disconnectLocked();
+            continue;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            std::cerr << "[teensy] link event " << pfd.revents << ", will retry...\n";
+            std::lock_guard<std::mutex> lk(writeMtx_);
+            disconnectLocked();
+            continue;
+        }
+
         ssize_t n = ::read(curFd, &ch, 1);
         if (n <= 0) {
             if (!running_) break;
@@ -202,21 +220,11 @@ void TeensyBridge::rxThread() {
                 std::cerr << "[teensy] read error: " << strerror(errno) << ", will retry...\n";
                 std::lock_guard<std::mutex> lk(writeMtx_);
                 disconnectLocked();
-                errCount = 0;
-                continue;
-            }
-            if (++errCount > 50) {
-                // Sustained read failures — Teensy likely disconnected
-                std::cerr << "[teensy] lost connection, will retry...\n";
-                std::lock_guard<std::mutex> lk(writeMtx_);
-                disconnectLocked();
-                errCount = 0;
             } else {
-                usleep(10000);
+                usleep(1000);
             }
             continue;
         }
-        errCount = 0;
         if (ch == '\n') {
             if (!buf.empty()) parseLine(buf);
             buf.clear();
