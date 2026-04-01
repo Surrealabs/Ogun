@@ -757,6 +757,14 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] WebSocket: ws://<ip>:" << cfg.ws_port << "\n";
     sd_notify(0, "READY=1");  // tell systemd we're up — start watchdog clock
 
+    // Keep systemd watchdog independent from telemetry/serial work.
+    std::thread watchdogThread([]() {
+        while (gRunning) {
+            sd_notify(0, "WATCHDOG=1");
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    });
+
     while (gRunning) {
         bool sleeping = false;
         {
@@ -783,8 +791,9 @@ int main(int argc, char* argv[]) {
         }
         for (auto& mod : modules) mod->onTick();
         std::this_thread::sleep_for(std::chrono::milliseconds(telPeriodMs));
-        sd_notify(0, "WATCHDOG=1");  // kick systemd watchdog
     }
+
+    if (watchdogThread.joinable()) watchdogThread.join();
 
     std::cout << "\n[main] Shutting down...\n";
     for (auto& mod : modules) mod->onShutdown();

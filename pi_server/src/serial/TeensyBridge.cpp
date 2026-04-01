@@ -119,39 +119,47 @@ bool TeensyBridge::writeLine(const std::string& s) {
     std::lock_guard<std::mutex> lk(writeMtx_);
     if (fd_ < 0) return false;
 
-    struct pollfd pfd{};
-    pfd.fd = fd_;
-    pfd.events = POLLOUT;
-    int ready = ::poll(&pfd, 1, 100);
-    if (ready < 0) {
-        if (errno == EINTR) return false;
-        lastErrno_ = errno;
-        txDropCount_++;
-        disconnectLocked();
-        return false;
-    }
-    if (ready == 0) {
-        txDropCount_++;
-        return false;
-    }
-    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        txDropCount_++;
-        disconnectLocked();
-        return false;
+    std::string line = s + "\n";
+    size_t off = 0;
+    while (off < line.size()) {
+        struct pollfd pfd{};
+        pfd.fd = fd_;
+        pfd.events = POLLOUT;
+        int ready = ::poll(&pfd, 1, 100);
+        if (ready < 0) {
+            if (errno == EINTR) continue;
+            lastErrno_ = errno;
+            txDropCount_++;
+            disconnectLocked();
+            return false;
+        }
+        if (ready == 0) {
+            txDropCount_++;
+            return false;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            txDropCount_++;
+            disconnectLocked();
+            return false;
+        }
+
+        ssize_t n = ::write(fd_, line.data() + off, line.size() - off);
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+            continue;
+        }
+        if (n < 0) {
+            lastErrno_ = errno;
+            txDropCount_++;
+            disconnectLocked();
+            return false;
+        }
+        if (n == 0) {
+            txDropCount_++;
+            return false;
+        }
+        off += static_cast<size_t>(n);
     }
 
-    std::string line = s + "\n";
-    ssize_t n = ::write(fd_, line.c_str(), line.size());
-    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-        txDropCount_++;
-        return false;
-    }
-    if (n < 0 || n != (ssize_t)line.size()) {
-        if (n < 0) lastErrno_ = errno;
-        txDropCount_++;
-        disconnectLocked();
-        return false;
-    }
     txOkCount_++;
     lastTxMs_ = nowMs();
     return true;
@@ -245,6 +253,7 @@ std::string TeensyBridge::linkDiagJson() const {
 void TeensyBridge::rxThread() {
     std::string buf;
     char ch;
+    int linkEventCount = 0;
     while (running_) {
         int curFd;
         { std::lock_guard<std::mutex> lk(writeMtx_); curFd = fd_; }
@@ -274,7 +283,12 @@ void TeensyBridge::rxThread() {
             continue;
         }
         if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            if (++linkEventCount < 3) {
+                usleep(5000);
+                continue;
+            }
             std::cerr << "[teensy] link event " << pfd.revents << ", will retry...\n";
+            linkEventCount = 0;
             std::lock_guard<std::mutex> lk(writeMtx_);
             disconnectLocked();
             continue;
@@ -294,6 +308,7 @@ void TeensyBridge::rxThread() {
             }
             continue;
         }
+        linkEventCount = 0;
         if (ch == '\n') {
             if (!buf.empty()) parseLine(buf);
             buf.clear();
