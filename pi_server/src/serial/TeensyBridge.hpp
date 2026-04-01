@@ -52,6 +52,9 @@ public:
     // Latest sensor snapshot (thread-safe)
     TeensySensors latestSensors() const;
 
+    // Serial link diagnostics payload (JSON)
+    std::string linkDiagJson() const;
+
 private:
     void rxThread();
     void parseLine(const std::string& line);
@@ -72,4 +75,19 @@ private:
     SensorCallback       sensorCb_;
     ReconnectCallback    reconnectCb_;
     RawLineCallback      rawLineCb_;
+
+    std::atomic<uint64_t> connectCount_{0};
+    std::atomic<uint64_t> reconnectCount_{0};
+    std::atomic<uint64_t> disconnectCount_{0};
+    std::atomic<uint64_t> txOkCount_{0};
+    std::atomic<uint64_t> txDropCount_{0};
+    std::atomic<uint64_t> rxLineCount_{0};
+    std::atomic<uint64_t> sensorFrameCount_{0};
+    std::atomic<uint64_t> readErrorCount_{0};
+    std::atomic<int>      lastErrno_{0};
+    std::atomic<long long> startMs_{0};
+    std::atomic<long long> lastOpenMs_{0};
+    std::atomic<long long> lastCloseMs_{0};
+    std::atomic<long long> lastRxMs_{0};
+    std::atomic<long long> lastTxMs_{0};
 };

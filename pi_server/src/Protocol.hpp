@@ -25,6 +25,7 @@ namespace RoverCmd {
     constexpr const char* REBOOT = "reboot"; // reboot the Pi
     constexpr const char* PIN_DIAG = "pin_diag"; // read back pin states for diagnostics
     constexpr const char* PIN_SET = "pin_set"; // set a specific pin for testing
+    constexpr const char* LINK_DIAG = "link_diag"; // serial link diagnostics
 }
 
 // ---- Outbound status types (Pi → Phone) --------------------
@@ -35,6 +36,7 @@ namespace RoverStatus {
     constexpr const char* POWER     = "power";     // sleep/camera state
     constexpr const char* UPDATE    = "update";    // update-check trigger status
     constexpr const char* DRIVE_TUNE = "drive_tune"; // drive tuning apply/ack
+    constexpr const char* LINK_DIAG  = "link_diag";  // teensy serial link diagnostics
     constexpr const char* ERROR     = "error";
 }
 

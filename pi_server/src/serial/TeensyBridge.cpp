@@ -6,11 +6,19 @@
 #include <iostream>
 #include <sstream>
 #include <poll.h>
+#include <chrono>
 // Simple JSON parse helpers (no external dependency)
 #include <regex>
 
+static long long nowMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
 TeensyBridge::TeensyBridge(const std::string& port, uint32_t baud)
-    : port_(port), baud_(baud) {}
+    : port_(port), baud_(baud) {
+    startMs_ = nowMs();
+}
 
 TeensyBridge::~TeensyBridge() { close(); }
 
@@ -48,18 +56,24 @@ void TeensyBridge::disconnectLocked() {
     if (fd_ >= 0) {
         ::close(fd_);
         fd_ = -1;
+        disconnectCount_++;
+        lastCloseMs_ = nowMs();
     }
 }
 
 bool TeensyBridge::open() {
     fd_ = ::open(port_.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK | O_SYNC);
     if (fd_ < 0) {
+        lastErrno_ = errno;
         std::cerr << "[teensy] open " << port_ << " failed: " << strerror(errno) << "\n";
     } else if (!configurePort(baudRate(baud_))) {
         std::cerr << "[teensy] configure failed\n";
+        lastErrno_ = errno;
         ::close(fd_);
         fd_ = -1;
     } else {
+        connectCount_++;
+        lastOpenMs_ = nowMs();
         std::cout << "[teensy] connected on " << port_ << "\n";
     }
     // Always start rxThread — it handles reconnect if fd_ < 0
@@ -90,10 +104,13 @@ bool TeensyBridge::tryReopen() {
         fd_ = newFd;
     }
     if (!configurePort(baudRate(baud_))) {
+        lastErrno_ = errno;
         std::lock_guard<std::mutex> lk(writeMtx_);
         disconnectLocked();
         return false;
     }
+    reconnectCount_++;
+    lastOpenMs_ = nowMs();
     std::cout << "[teensy] reconnected on " << port_ << "\n";
     return true;
 }
@@ -108,23 +125,36 @@ bool TeensyBridge::writeLine(const std::string& s) {
     int ready = ::poll(&pfd, 1, 100);
     if (ready < 0) {
         if (errno == EINTR) return false;
+        lastErrno_ = errno;
+        txDropCount_++;
         disconnectLocked();
         return false;
     }
-    if (ready == 0) return false;
+    if (ready == 0) {
+        txDropCount_++;
+        return false;
+    }
     if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+        txDropCount_++;
         disconnectLocked();
         return false;
     }
 
     std::string line = s + "\n";
     ssize_t n = ::write(fd_, line.c_str(), line.size());
-    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return false;
+    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        txDropCount_++;
+        return false;
+    }
     if (n < 0 || n != (ssize_t)line.size()) {
+        if (n < 0) lastErrno_ = errno;
+        txDropCount_++;
         disconnectLocked();
         return false;
     }
-    return n == (ssize_t)line.size();
+    txOkCount_++;
+    lastTxMs_ = nowMs();
+    return true;
 }
 
 void TeensyBridge::sendDrive(float left, float right, float turn) {
@@ -154,6 +184,9 @@ TeensySensors TeensyBridge::latestSensors() const {
 }
 
 void TeensyBridge::parseLine(const std::string& line) {
+    rxLineCount_++;
+    lastRxMs_ = nowMs();
+
     // Minimal JSON parse using regex to avoid external deps
     auto getFloat = [&](const std::string& key) -> float {
         std::regex re("\"" + key + "\":([\\-0-9.]+)");
@@ -180,7 +213,33 @@ void TeensyBridge::parseLine(const std::string& line) {
         std::lock_guard<std::mutex> lk(sensorMtx_);
         latest_ = s;
     }
+    sensorFrameCount_++;
     if (sensorCb_) sensorCb_(s);
+}
+
+std::string TeensyBridge::linkDiagJson() const {
+    const long long now = nowMs();
+    const long long lastRx = lastRxMs_.load();
+    const long long lastTx = lastTxMs_.load();
+    const long long started = startMs_.load();
+
+    std::ostringstream ss;
+    ss << "{\"type\":\"link_diag\"," 
+       << "\"port\":\"" << port_ << "\"," 
+       << "\"is_open\":" << (isOpen() ? "true" : "false") << ","
+       << "\"uptime_ms\":" << (started > 0 ? (now - started) : 0) << ","
+       << "\"since_rx_ms\":" << (lastRx > 0 ? (now - lastRx) : -1) << ","
+       << "\"since_tx_ms\":" << (lastTx > 0 ? (now - lastTx) : -1) << ","
+       << "\"connects\":" << connectCount_.load() << ","
+       << "\"reconnects\":" << reconnectCount_.load() << ","
+       << "\"disconnects\":" << disconnectCount_.load() << ","
+       << "\"tx_ok\":" << txOkCount_.load() << ","
+       << "\"tx_drop\":" << txDropCount_.load() << ","
+       << "\"rx_lines\":" << rxLineCount_.load() << ","
+       << "\"sensor_frames\":" << sensorFrameCount_.load() << ","
+       << "\"read_errors\":" << readErrorCount_.load() << ","
+       << "\"last_errno\":" << lastErrno_.load() << "}";
+    return ss.str();
 }
 
 void TeensyBridge::rxThread() {
@@ -208,6 +267,8 @@ void TeensyBridge::rxThread() {
         if (ready < 0) {
             if (errno == EINTR) continue;
             std::cerr << "[teensy] poll error: " << strerror(errno) << ", will retry...\n";
+            readErrorCount_++;
+            lastErrno_ = errno;
             std::lock_guard<std::mutex> lk(writeMtx_);
             disconnectLocked();
             continue;
@@ -224,6 +285,8 @@ void TeensyBridge::rxThread() {
             if (!running_) break;
             if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
                 std::cerr << "[teensy] read error: " << strerror(errno) << ", will retry...\n";
+                readErrorCount_++;
+                lastErrno_ = errno;
                 std::lock_guard<std::mutex> lk(writeMtx_);
                 disconnectLocked();
             } else {

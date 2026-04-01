@@ -559,6 +559,13 @@ static bool dispatchCommand(const std::string& json,
     // --- Status request ---
     if (type == RoverCmd::STATUS) {
         teensy.requestSensors();
+        broadcastAll(ws, webui, teensy.linkDiagJson());
+        return true;
+    }
+
+    // --- Teensy serial-link diagnostics ---
+    if (type == RoverCmd::LINK_DIAG) {
+        broadcastAll(ws, webui, teensy.linkDiagJson());
         return true;
     }
 
