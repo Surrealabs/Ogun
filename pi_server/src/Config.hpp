@@ -45,10 +45,10 @@ struct RoverConfig {
     float teensy_ramp_sec = 1.0f;
     bool  invert_left_motor = false;
     bool  invert_right_motor = false;
-    int   teensy_turn_max_pwm = 255;
+    int   teensy_turn_max_pwm = 90;
     bool  invert_turn_motor = false;
-    float teensy_turn_slowdown = 0.5f;
-    float teensy_turn_ramp_sec = 0.1f;
+    float teensy_turn_slowdown = 0.85f;
+    float teensy_turn_ramp_sec = 0.35f;
 
     int teensy_watchdog_ms = 500;
     int teensy_telem_interval_ms = 100;

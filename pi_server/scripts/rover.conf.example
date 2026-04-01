@@ -49,6 +49,10 @@ teensy_ramp_sec = 1.0
 # Motor direction inversion (for mirror-mounted motors)
 invert_left_motor = false
 invert_right_motor = true
+teensy_turn_max_pwm = 90
+invert_turn_motor = false
+teensy_turn_slowdown = 0.85
+teensy_turn_ramp_sec = 0.35
 
 teensy_watchdog_ms = 500
 teensy_telem_interval_ms = 100
