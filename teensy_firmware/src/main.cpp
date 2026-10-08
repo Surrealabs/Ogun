@@ -3,11 +3,19 @@
 //  Protocol: newline-terminated JSON over USB Serial (115200)
 //
 //  Pi → Teensy:
-//    {"cmd":"drive","l":0.5,"r":-0.3}
-//    {"cmd":"stop"}
-//    {"cmd":"sensor_req"}
-//    {"cmd":"enc_reset"}
-//    {"cmd":"bootloader"}
+//    {"cmd":"arm"}            start a session (opens the watchdog window)
+//    {"cmd":"drive","l":0.5,"r":-0.3,"t":0}   feeds the watchdog
+//    {"cmd":"hb"}             operator heartbeat, feeds the watchdog
+//    {"cmd":"stop"} {"cmd":"disarm"} {"cmd":"estop"} {"cmd":"estop_clear"}
+//    {"cmd":"sensor_req"}     does NOT feed the watchdog
+//    {"cmd":"enc_reset"} {"cmd":"bootloader"} {"cmd":"pin_diag"}
+//    {"cmd":"pin_set","pin":30,"val":1}   allowlisted, non-motor pins only
+//    {"cmd":"fw_cfg",...} {"cmd":"fw_cfg_get"}
+//
+//  Watchdog (owner rulings 2026-10-07, see SafetyLogic.hpp): no
+//  drive/hb for watchdog_ms (clamped 100..1000) while armed → hard
+//  stop + disarm, latched until the next {"cmd":"arm"}. Emits
+//    {"type":"safety","event":"watchdog","action":"disarm",...}
 //
 //  Teensy → Pi (on sensor_req or every TELEM_INTERVAL_MS):
 //    {"type":"sensors","enc_l":123,"enc_r":456,
@@ -18,6 +26,12 @@
 #include "MotorController.hpp"
 #include "SensorHub.hpp"
 #include "FirmwareConfig.hpp"
+#include "JsonLite.hpp"
+#include "SafetyLogic.hpp"
+
+static_assert(fwcfg::WATCHDOG_MS >= safety::WATCHDOG_MIN_MS &&
+              fwcfg::WATCHDOG_MS <= safety::WATCHDOG_MAX_MS,
+              "ROVER_WATCHDOG_MS must be within the clamp [100, 1000] ms");
 
 extern "C" void _reboot_Teensyduino_(void);
 
@@ -56,53 +70,28 @@ struct RuntimeConfig {
     float lowVoltageCutoff{fwcfg::LOW_VOLTAGE_CUTOFF};
     float lowVoltageResume{fwcfg::LOW_VOLTAGE_RESUME};
     float inputDeadband{fwcfg::INPUT_DEADBAND};
-    bool  requireArm{fwcfg::REQUIRE_ARM};
+    // (No requireArm: arming is always required, owner Q1. fw_cfg
+    //  "require_arm" is accepted and ignored; the reply reports true.)
+    // pin_set allowlist (owner Q11): bit n = pin n. EMPTY by default;
+    // set with fw_cfg {"pin_allow":[30,31]}. Motor-driver pins stay
+    // refused whatever this holds (SafetyLogic.hpp pinSetVerdict).
+    uint64_t pinAllowMask{0};
 };
 
 static RuntimeConfig gCfg;
 static std::unique_ptr<MotorController> motors;
 static std::unique_ptr<SensorHub> sensors;
 
-static uint32_t lastDriveMs  = 0;
 static uint32_t lastTelemMs  = 0;
-static char     rxBuf[256];
-static uint8_t  rxIdx = 0;
+static safety::LineReader<256> gRx;   // same 255-char line limit as before
 
 // ---- Safety state ------------------------------------------
-static bool     armed         = false;  // motors disabled until arm cmd
+// gLatch.armed: motors disabled until arm cmd; gLatch.lastFeedMs:
+// last operator frame; gLatch.trips: how many times the watchdog fired.
+static safety::WatchdogLatch gLatch;
 static bool     estopped      = false;  // emergency stop latched
 static bool     lowVoltLatch  = false;  // battery too low
-static uint32_t watchdogTrips = 0;      // how many times watchdog fired
 static uint32_t bootMs        = 0;      // millis() at boot
-
-// ---- Simple JSON helpers (no heap) -------------------------
-static float jsonGetFloat(const char* json, const char* key) {
-    const char* p = strstr(json, key);
-    if (!p) return 0.f;
-    p = strchr(p, ':');
-    if (!p) return 0.f;
-    return strtof(p + 1, nullptr);
-}
-static bool jsonHasKey(const char* json, const char* key) {
-    return strstr(json, key) != nullptr;
-}
-static bool jsonTryGetInt(const char* json, const char* key, int* out) {
-    const char* p = strstr(json, key);
-    if (!p) return false;
-    p = strchr(p, ':');
-    if (!p) return false;
-    *out = (int)strtol(p + 1, nullptr, 10);
-    return true;
-}
-
-static bool jsonTryGetFloat(const char* json, const char* key, float* out) {
-    const char* p = strstr(json, key);
-    if (!p) return false;
-    p = strchr(p, ':');
-    if (!p) return false;
-    *out = strtof(p + 1, nullptr);
-    return true;
-}
 
 static uint8_t toPin(int v, uint8_t fallback) {
     if (v < 0 || v > 255) return fallback;
@@ -125,8 +114,31 @@ static float applyDeadband(float v, float deadband) {
 static bool motorsAllowed() {
     if (estopped) return false;
     if (lowVoltLatch) return false;
-    if (gCfg.requireArm && !armed) return false;
+    if (!gLatch.armed) return false;   // arming is always required
     return true;
+}
+
+// Pins pin_set may NEVER write, whatever pin_allow says (owner Q11 safety
+// note; review findings 3 and 6): every BTS7960 pin. RPWM/LPWM/EN, because
+// writing one bypasses the hard stop; IS (current sense), because driving it
+// as an output fights the board's sense output. Both the runtime assignment
+// (what the code drives now) AND the compile-time wiring, so moving a role
+// with fw_cfg cannot free its wired pin. The host test (firmware_sim_test)
+// calls this same function, so trimming it fails the test.
+static constexpr size_t NEVER_ALLOW_PIN_COUNT = 24;
+static void buildNeverAllowPins(uint8_t (&out)[NEVER_ALLOW_PIN_COUNT]) {
+    const uint8_t pins[] = {
+        gCfg.left.rpwm,  gCfg.left.lpwm,  gCfg.left.en,
+        gCfg.right.rpwm, gCfg.right.lpwm, gCfg.right.en,
+        gCfg.turn.rpwm,  gCfg.turn.lpwm,  gCfg.turn.en,
+        gCfg.sensor.currLAdcPin, gCfg.sensor.currRAdcPin, gCfg.sensor.currTAdcPin,
+        fwcfg::L_RPWM, fwcfg::L_LPWM, fwcfg::L_EN,
+        fwcfg::R_RPWM, fwcfg::R_LPWM, fwcfg::R_EN,
+        fwcfg::T_RPWM, fwcfg::T_LPWM, fwcfg::T_EN,
+        fwcfg::CURR_L_ADC_PIN, fwcfg::CURR_R_ADC_PIN, fwcfg::CURR_T_ADC_PIN,
+    };
+    static_assert(sizeof(pins) == NEVER_ALLOW_PIN_COUNT, "update NEVER_ALLOW_PIN_COUNT");
+    memcpy(out, pins, sizeof(pins));
 }
 
 static void forceStop() {
@@ -149,7 +161,13 @@ static void applyRuntimeConfig(const RuntimeConfig& cfg) {
 }
 
 static void emitConfig() {
-    char buf[700];
+    // 648 chars at default values before pin_allow was added; a full
+    // pin_allow adds up to 130. NOTE: the Pi's TeensyBridge drops any
+    // line over 512 chars, so this reply only reaches a raw-serial
+    // reader today (FIRMWARE_PLAN.md, "Known limits").
+    char pinList[160];
+    safety::formatPinList(gCfg.pinAllowMask, pinList, sizeof(pinList));
+    char buf[1024];
     snprintf(buf, sizeof(buf),
         "{\"type\":\"fw_cfg\","
         "\"l_rpwm\":%u,\"l_lpwm\":%u,\"l_en\":%u,"
@@ -164,9 +182,9 @@ static void emitConfig() {
         "\"turn_max_pwm\":%u,\"invert_turn\":%d,"
         "\"turn_slowdown\":%.2f,\"turn_ramp_sec\":%.3f,"
         "\"low_volt_cutoff\":%.2f,\"low_volt_resume\":%.2f,"
-        "\"input_deadband\":%.3f,\"require_arm\":%s,"
+        "\"input_deadband\":%.3f,\"require_arm\":true,"
         "\"armed\":%s,\"estopped\":%s,\"low_volt_latch\":%s,"
-        "\"watchdog_trips\":%lu}",
+        "\"watchdog_trips\":%lu,\"pin_allow\":%s}",
         gCfg.left.rpwm, gCfg.left.lpwm, gCfg.left.en,
         gCfg.right.rpwm, gCfg.right.lpwm, gCfg.right.en,
         gCfg.turn.rpwm, gCfg.turn.lpwm, gCfg.turn.en,
@@ -180,52 +198,58 @@ static void emitConfig() {
         gCfg.motorTuning.turnMaxPwm, (int)gCfg.motorTuning.invertTurn,
         gCfg.motorTuning.turnSlowdown, gCfg.motorTuning.turnRampSec,
         gCfg.lowVoltageCutoff, gCfg.lowVoltageResume,
-        gCfg.inputDeadband, gCfg.requireArm ? "true" : "false",
-        armed ? "true" : "false", estopped ? "true" : "false",
+        gCfg.inputDeadband,
+        gLatch.armed ? "true" : "false", estopped ? "true" : "false",
         lowVoltLatch ? "true" : "false",
-        (unsigned long)watchdogTrips);
+        (unsigned long)gLatch.trips, pinList);
     Serial.println(buf);
 }
 
 // ---- Process one complete JSON line ------------------------
 void processCommand(const char* line) {
-    // --- Emergency stop (latching — requires explicit clear) ---
-    if (jsonHasKey(line, "\"estop\"")) {
+    using safety::Cmd;
+    const Cmd cmd = safety::classifyCommand(line);
+    // Arm state and the watchdog feed live in one host-tested place
+    // (SafetyLogic.hpp): drive/hb/arm feed it; arm arms; disarm and
+    // estop disarm. The cases below only drive outputs and reply.
+    gLatch.onCommand(cmd, millis());
+
+    switch (cmd) {
+    // --- Emergency stop (latching — requires explicit clear; also disarms) ---
+    case Cmd::Estop:
         estopped = true;
         forceStop();
         Serial.println("{\"type\":\"estop_ack\",\"estopped\":true}");
         return;
-    }
-    // --- Clear emergency stop ---
-    if (jsonHasKey(line, "\"estop_clear\"")) {
+    // --- Clear emergency stop (stays disarmed until arm) ---
+    case Cmd::EstopClear:
         estopped = false;
         Serial.println("{\"type\":\"estop_ack\",\"estopped\":false}");
         return;
-    }
-    // --- Arm motors (must be sent before driving) ---
-    if (jsonHasKey(line, "\"arm\"")) {
-        armed = true;
-        lastDriveMs = millis();  // reset watchdog on arm
+    // --- Arm motors: required before driving, and the ONLY way out
+    //     of a watchdog trip. Opens a fresh watchdog window. Always
+    //     starts from ZERO targets (review finding 2): whatever target
+    //     was stored before must never be what the ramp heads for, and
+    //     this must not depend on the host sending stop after arm. ---
+    case Cmd::Arm:
+        motors->stop();
         Serial.println("{\"type\":\"arm_ack\",\"armed\":true}");
         return;
-    }
     // --- Disarm motors ---
-    if (jsonHasKey(line, "\"disarm\"")) {
-        armed = false;
+    case Cmd::Disarm:
         forceStop();
         Serial.println("{\"type\":\"arm_ack\",\"armed\":false}");
         return;
-    }
-
-    if (jsonHasKey(line, "\"stop\"")) {
+    // --- Stop: zero the outputs. Does NOT feed the watchdog: the Pi
+    //     sends stop on its own (e.g. in reply to drive while not
+    //     started), so it is no proof that an operator is there. ---
+    case Cmd::Stop:
         motors->stop();
-        lastDriveMs = millis();  // reset watchdog
         return;
-    }
-    if (jsonHasKey(line, "\"drive\"")) {
+    // --- Drive: operator frame (fed the watchdog above) ---
+    case Cmd::Drive: {
         if (!motorsAllowed()) {
             motors->stop();
-            lastDriveMs = millis();
             return;
         }
         float l = applyDeadband(jsonGetFloat(line, "\"l\""), gCfg.inputDeadband);
@@ -233,29 +257,31 @@ void processCommand(const char* line) {
         float t = applyDeadband(jsonGetFloat(line, "\"t\""), gCfg.inputDeadband);
         motors->setTarget(l, r);
         motors->setTurnTarget(t);
-        lastDriveMs = millis();
         return;
     }
-    if (jsonHasKey(line, "\"sensor_req\"")) {
-        lastDriveMs = millis();  // reset watchdog — Pi is alive
+    // --- Operator heartbeat: feeds the watchdog (above), nothing else.
+    //     No reply, so it can run at frame rate without serial spam. ---
+    case Cmd::Hb:
+        return;
+    // --- Sensor request: answered, but NO LONGER feeds the watchdog
+    //     (it did, so a live Pi kept a driverless rover armed). ---
+    case Cmd::SensorReq: {
         sensors->update();
         char buf[200];
         sensors->toJson(buf, sizeof(buf));
         Serial.println(buf);
         return;
     }
-    if (jsonHasKey(line, "\"enc_reset\"")) {
+    case Cmd::EncReset:
         sensors->resetEncoders();
         return;
-    }
-    if (jsonHasKey(line, "\"bootloader\"")) {
+    case Cmd::Bootloader:
         Serial.println("{\"type\":\"bootloader\",\"ok\":true}");
         Serial.flush();
         delay(20);
         _reboot_Teensyduino_();
         return;
-    }
-    if (jsonHasKey(line, "\"pin_diag\"")) {
+    case Cmd::PinDiag: {
         // Read back actual pin states for turn motor to diagnose hardware
         char dbuf[300];
         snprintf(dbuf, sizeof(dbuf),
@@ -271,32 +297,47 @@ void processCommand(const char* line) {
             digitalRead(gCfg.turn.rpwm), digitalRead(gCfg.turn.lpwm),
             gCfg.left.en, digitalRead(gCfg.left.en),
             gCfg.right.en, digitalRead(gCfg.right.en),
-            armed ? "true" : "false",
-            (armed && !estopped && !lowVoltLatch) ? "true" : "false");
+            gLatch.armed ? "true" : "false",
+            (gLatch.armed && !estopped && !lowVoltLatch) ? "true" : "false");
         Serial.println(dbuf);
         return;
     }
-    // Pin wiggle test: {"cmd":"pin_set","pin":26,"val":0}
-    if (jsonHasKey(line, "\"pin_set\"")) {
+    // Pin write: {"cmd":"pin_set","pin":30,"val":1}
+    // Owner Q11: allowed only for pins on gCfg.pinAllowMask (empty by
+    // default, set via fw_cfg "pin_allow"). Every BTS7960 pin is refused
+    // ALWAYS (buildNeverAllowPins). Arming state does not matter.
+    // Owner 2026-10-07: serial/SSH only for now; the Pi must stop
+    // forwarding pin_set/pin_allow from network clients (Step 2).
+    case Cmd::PinSet: {
         int pin = -1, val = -1;
-        if (jsonTryGetInt(line, "\"pin\"", &pin) && jsonTryGetInt(line, "\"val\"", &val)) {
-            if (pin >= 0 && pin <= 41) {
-                pinMode((uint8_t)pin, OUTPUT);
-                digitalWrite((uint8_t)pin, val ? HIGH : LOW);
-                char pbuf[100];
-                snprintf(pbuf, sizeof(pbuf),
-                    "{\"type\":\"pin_set\",\"pin\":%d,\"val\":%d,\"read\":%d}",
-                    pin, val, digitalRead((uint8_t)pin));
-                Serial.println(pbuf);
-            }
+        char pbuf[120];
+        if (!(jsonTryGetInt(line, "\"pin\"", &pin) && jsonTryGetInt(line, "\"val\"", &val))) {
+            Serial.println("{\"type\":\"pin_set\",\"ok\":false,\"reason\":\"bad_args\"}");
+            return;
         }
+        uint8_t neverAllow[NEVER_ALLOW_PIN_COUNT];
+        buildNeverAllowPins(neverAllow);
+        const safety::PinVerdict verdict = safety::pinSetVerdict(
+            pin, gCfg.pinAllowMask, neverAllow, NEVER_ALLOW_PIN_COUNT);
+        if (verdict != safety::PinVerdict::Ok) {
+            snprintf(pbuf, sizeof(pbuf),
+                "{\"type\":\"pin_set\",\"pin\":%d,\"ok\":false,\"reason\":\"%s\"}",
+                pin, safety::pinVerdictName(verdict));
+            Serial.println(pbuf);
+            return;
+        }
+        pinMode((uint8_t)pin, OUTPUT);
+        digitalWrite((uint8_t)pin, val ? HIGH : LOW);
+        snprintf(pbuf, sizeof(pbuf),
+            "{\"type\":\"pin_set\",\"pin\":%d,\"val\":%d,\"read\":%d,\"ok\":true}",
+            pin, val, digitalRead((uint8_t)pin));
+        Serial.println(pbuf);
         return;
     }
-    if (jsonHasKey(line, "\"fw_cfg_get\"")) {
+    case Cmd::FwCfgGet:
         emitConfig();
         return;
-    }
-    if (jsonHasKey(line, "\"fw_cfg\"")) {
+    case Cmd::FwCfg: {
         RuntimeConfig cfg = gCfg;
         int vi = 0;
         float vf = 0.f;
@@ -326,7 +367,8 @@ void processCommand(const char* line) {
         if (jsonTryGetFloat(line, "\"curr_zero_mv\"", &vf)) cfg.sensor.currZeroMv = vf;
         if (jsonTryGetFloat(line, "\"curr_sens_mv_per_a\"", &vf)) cfg.sensor.currSensMvPerA = vf;
 
-        if (jsonTryGetInt(line, "\"watchdog_ms\"", &vi) && vi >= 0) cfg.watchdogMs = (uint32_t)vi;
+        // Owner Q2 + gap rule: no client can set the window outside [100, 1000] ms.
+        if (jsonTryGetInt(line, "\"watchdog_ms\"", &vi)) cfg.watchdogMs = safety::clampWatchdogMs(vi);
         if (jsonTryGetInt(line, "\"telem_ms\"", &vi) && vi >= 0) cfg.telemIntervalMs = (uint32_t)vi;
 
         if (jsonTryGetFloat(line, "\"drive_max_fwd\"", &vf)) {} // legacy — ignored
@@ -351,10 +393,19 @@ void processCommand(const char* line) {
         if (jsonTryGetFloat(line, "\"low_volt_cutoff\"", &vf)) cfg.lowVoltageCutoff = clampFloat(vf, 0.0f, 30.0f);
         if (jsonTryGetFloat(line, "\"low_volt_resume\"", &vf)) cfg.lowVoltageResume = clampFloat(vf, 0.0f, 30.0f);
         if (jsonTryGetFloat(line, "\"input_deadband\"", &vf)) cfg.inputDeadband = clampFloat(vf, 0.0f, 0.3f);
-        if (jsonTryGetInt(line, "\"require_arm\"", &vi)) cfg.requireArm = (vi != 0);
+        // "require_arm" is accepted and IGNORED (review finding 7): arming is
+        // always required (owner Q1). The Pi's startup line still sends it.
+
+        // pin_set allowlist, all or nothing: "pin_allow":[30,31] replaces
+        // it, [] clears it, a malformed list leaves it unchanged.
+        uint64_t allow = 0;
+        if (safety::jsonTryGetPinList(line, "\"pin_allow\"", &allow)) cfg.pinAllowMask = allow;
 
         applyRuntimeConfig(cfg);
         emitConfig();
+        return;
+    }
+    case Cmd::None:
         return;
     }
 }
@@ -364,18 +415,18 @@ void setup() {
     Serial.begin(115200);  // USB CDC to Pi
     while (!Serial && millis() < 3000) {}  // wait up to 3 s
 
-    armed = !fwcfg::REQUIRE_ARM;  // start disarmed if arm required
+    gLatch.armed = false;  // always start disarmed: arming is always required
     estopped = false;
     lowVoltLatch = false;
-    watchdogTrips = 0;
+    gLatch.trips = 0;
 
     applyRuntimeConfig(gCfg);
 
     // Motors start disabled until armed
-    if (!armed) motors->enable(false);
+    motors->enable(false);
 
     bootMs = millis();
-    lastDriveMs = millis();
+    gLatch.lastFeedMs = millis();
     lastTelemMs = millis();
 
     Serial.println("{\"type\":\"boot\",\"msg\":\"rover-teensy-ready\",\"require_arm\":true}");
@@ -383,23 +434,19 @@ void setup() {
 
 // ---- Arduino loop ------------------------------------------
 void loop() {
-    uint32_t now = millis();
-
     // --- Read serial input (byte by byte, parse on '\n') ---
+    // A line longer than 255 chars is now dropped whole; it used to
+    // be cut and its tail run as a separate command.
     while (Serial.available()) {
-        char c = Serial.read();
-        if (c == '\n' || c == '\r') {
-            if (rxIdx > 0) {
-                rxBuf[rxIdx] = '\0';
-                processCommand(rxBuf);
-                rxIdx = 0;
-            }
-        } else if (rxIdx < (uint8_t)(sizeof(rxBuf) - 1)) {
-            rxBuf[rxIdx++] = c;
-        } else {
-            rxIdx = 0;  // overflow — discard
-        }
+        const char* line = gRx.push((char)Serial.read());
+        if (line) processCommand(line);
     }
+
+    // Sample the clock AFTER the input is processed. Sampled before
+    // (as it was), a feed stamped by processCommand() a tick later
+    // made (now - lastFeed) underflow to ~49 days: a false trip,
+    // harmless as a coast but a spurious DISARM under the new rule.
+    const uint32_t now = millis();
 
     // --- Low-voltage cutoff (hysteresis) --------------------
     if (gCfg.lowVoltageCutoff > 0.0f) {
@@ -417,29 +464,23 @@ void loop() {
         }
     }
 
-    // --- Watchdog: coast to zero if no comms for a while ----
-    // No hard stop — just set target to 0 and let the slew
-    // ramp down gently. Only e-stop/disarm do a hard stop.
-    if ((now - lastDriveMs) > gCfg.watchdogMs) {
-        motors->coast();  // target→0, slew handles gentle decel
-        if (armed) {
-            watchdogTrips++;
-            static uint32_t lastWdReportMs = 0;
-            if ((now - lastWdReportMs) > 2000) {
-                char wdBuf[100];
-                snprintf(wdBuf, sizeof(wdBuf),
-                    "{\"type\":\"safety\",\"event\":\"watchdog\",\"trips\":%lu}",
-                    (unsigned long)watchdogTrips);
-                Serial.println(wdBuf);
-                lastWdReportMs = now;
-            }
-        }
-        lastDriveMs = now;  // prevent spamming coast()
+    // --- Watchdog: operator frames stopped → HARD STOP + DISARM ----
+    // Owner Q1 (2026-10-07): no coast, whatever ramp_sec says. The
+    // latch holds until an explicit {"cmd":"arm"}; drive frames do not
+    // re-arm. One trip per arming, so the line is never rate-limited.
+    if (gLatch.poll(now, gCfg.watchdogMs)) {
+        forceStop();  // PWMs to 0 and every BTS7960 enable LOW
+        char wdBuf[128];
+        snprintf(wdBuf, sizeof(wdBuf),
+            "{\"type\":\"safety\",\"event\":\"watchdog\",\"action\":\"disarm\","
+            "\"trips\":%lu,\"watchdog_ms\":%lu}",
+            (unsigned long)gLatch.trips, (unsigned long)gCfg.watchdogMs);
+        Serial.println(wdBuf);
     }
 
     // --- Run motor slew every loop tick ---------------------
     // This advances the ramp smoothly regardless of command rate.
-    if (armed && motorsAllowed()) {
+    if (gLatch.armed && motorsAllowed()) {
         motors->tick();
     }
 

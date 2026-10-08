@@ -109,17 +109,23 @@ namespace fwcfg {
 #ifndef ROVER_RAMP_SEC
 #define ROVER_RAMP_SEC 1.0f
 #endif
+// Turn defaults = the owner's intended "safer default turn motor settings"
+// (commit 573f8b8: pi_server/src/Config.hpp:48,50-51 and
+// pi_server/scripts/rover.conf.example:52-55). That commit only changed the
+// Pi, whose startup fw_cfg (515 chars) never fits the Teensy's 255-char line,
+// so until 2026-10-07 the Teensy ran 255 / 0.5 / 0.1. Owner ruling 2026-10-07:
+// make them the built-in defaults. invert_turn (false) already matched.
 #ifndef ROVER_TURN_MAX_PWM
-#define ROVER_TURN_MAX_PWM 255
+#define ROVER_TURN_MAX_PWM 90
 #endif
 #ifndef ROVER_INVERT_TURN
 #define ROVER_INVERT_TURN 0
 #endif
 #ifndef ROVER_TURN_SLOWDOWN
-#define ROVER_TURN_SLOWDOWN 0.5f  // 0-1: drive reduction at full turn
+#define ROVER_TURN_SLOWDOWN 0.85f // 0-1: drive reduction at full turn
 #endif
 #ifndef ROVER_TURN_RAMP_SEC
-#define ROVER_TURN_RAMP_SEC 0.1f  // near-instant turn response
+#define ROVER_TURN_RAMP_SEC 0.35f // seconds to ramp the turn motor 0 → full
 #endif
 // (removed — replaced by ROVER_RAMP_SEC above)
 
@@ -135,8 +141,11 @@ namespace fwcfg {
 #ifndef ROVER_INPUT_DEADBAND
 #define ROVER_INPUT_DEADBAND 0.05f
 #endif
-#ifndef ROVER_REQUIRE_ARM
-#define ROVER_REQUIRE_ARM 1
+// Arming is ALWAYS required (owner Q1, 2026-10-07): motion only after an
+// explicit {"cmd":"arm"}, and a watchdog trip disarms until the next one.
+// The old ROVER_REQUIRE_ARM / fw_cfg "require_arm" knob is gone.
+#if defined(ROVER_REQUIRE_ARM) && !(ROVER_REQUIRE_ARM)
+#error "ROVER_REQUIRE_ARM=0 is no longer supported: arming is always required"
 #endif
 
 constexpr uint8_t L_RPWM = ROVER_L_RPWM_PIN;
@@ -180,6 +189,5 @@ constexpr float   TURN_RAMP_SEC = ROVER_TURN_RAMP_SEC;
 constexpr float LOW_VOLTAGE_CUTOFF = ROVER_LOW_VOLTAGE_CUTOFF;
 constexpr float LOW_VOLTAGE_RESUME = ROVER_LOW_VOLTAGE_RESUME;
 constexpr float INPUT_DEADBAND     = ROVER_INPUT_DEADBAND;
-constexpr bool  REQUIRE_ARM        = ROVER_REQUIRE_ARM;
 
 } // namespace fwcfg

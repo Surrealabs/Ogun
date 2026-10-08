@@ -639,10 +639,11 @@ const driveTuneDefault = {
   ramp_sec: 1.0,
   invert_left: false,
   invert_right: false,
-  turn_max_pwm: 255,
+  // R4: same turn defaults as the Pi (rover.conf) and the Teensy firmware (573f8b8).
+  turn_max_pwm: 90,
   invert_turn: false,
-  turn_slowdown: 0.5,
-  turn_ramp_sec: 0.1
+  turn_slowdown: 0.85,
+  turn_ramp_sec: 0.35
 };
 let driveTune = { ...driveTuneDefault };
 let frontCamPort = 8081;
@@ -650,6 +651,18 @@ let rearCamPort = 8082;
 let drivetrainStarted = false;
 let estopLatched = false;
 let precheckOk = false;
+// Teensy watchdog fail-safe (Step 1, 2026-10-07): the Teensy now hard-stops
+// and DISARMS when drive frames stop for watchdog_ms (500 ms), latched until
+// the next START. The Pi keeps reporting started=true after a trip, so the
+// page tracks the trip itself and offers START (re-arm) again.
+let teensyTripped = false;
+let startRequestedAt = 0;          // Date.now() of the last START press
+const START_GRACE_MS = 2000;       // stream from the press, before telemetry acks it
+// Neutral-to-arm (review finding 1, 2026-10-07): START is refused while any
+// control is off-centre; the button shows RELEASE for this long.
+let startRefusedUntil = 0;
+let startRefusedWhat = '';         // which controls were held (R2)
+const START_REFUSED_SHOW_MS = 2000;
 
 function tuneClamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -881,16 +894,25 @@ function updateIgnitionButton() {
     return;
   }
 
-  if (drivetrainStarted) {
+  if (drivetrainStarted && !teensyTripped) {
     btn.classList.add('ebrake');
     btn.textContent = 'E-BRK';
     btn.title = 'Emergency brake';
     return;
   }
 
+  if (Date.now() < startRefusedUntil) {
+    btn.classList.add('latched');
+    btn.textContent = 'RELEASE';
+    btn.title = `Release the controls to start (held: ${startRefusedWhat})`;
+    return;
+  }
+
   btn.classList.add('start');
   btn.textContent = 'START';
-  btn.title = precheckOk ? 'Start drivetrain' : 'Pre-ignition checks not passed';
+  btn.title = !precheckOk ? 'Pre-ignition checks not passed'
+            : teensyTripped ? 'Watchdog stopped the rover: press to re-arm'
+            : 'Start drivetrain';
   if (!precheckOk) btn.classList.add('disabled');
 }
 
@@ -899,7 +921,22 @@ function sendIgnitionStart() {
     addLog('Start blocked: pre-ignition checks failed');
     return;
   }
-  sendJson({ type: 'ignition_start' });
+  // Neutral-to-arm: never arm into a held stick, key or gamepad axis.
+  const held = heldControls();
+  if (held.length) {
+    startRefusedUntil = Date.now() + START_REFUSED_SHOW_MS;
+    startRefusedWhat = held.join(', ');
+    updateIgnitionButton();
+    setTimeout(updateIgnitionButton, START_REFUSED_SHOW_MS + 50);
+    addLog(`START refused: release the controls to start (held: ${startRefusedWhat})`);
+    return;
+  }
+  startRefusedUntil = 0;
+  neutralizeDriveInput();                  // frames stay neutral until fresh input
+  sendJson({ type: 'ignition_start' });   // Pi sends the Teensy {"cmd":"arm"}
+  teensyTripped = false;
+  startRequestedAt = Date.now();
+  updateIgnitionButton();
   addLog('Ignition start requested');
 }
 
@@ -913,7 +950,7 @@ function handleIgnitionButtonPress() {
     clearEstopLatch();
     return;
   }
-  if (!drivetrainStarted) {
+  if (!drivetrainStarted || teensyTripped) {
     sendIgnitionStart();
     return;
   }
@@ -1313,6 +1350,9 @@ function onLoginSuccess() {
   connected = true;
   drivetrainStarted = false;
   estopLatched = false;
+  teensyTripped = false;
+  startRequestedAt = 0;
+  neutralizeDriveInput();   // R3: input made while disconnected never carries over
   precheckOk = !roverSleeping;
   winCurrL.length = 0; winCurrR.length = 0; winCurrT.length = 0; winLat.length = 0;
   connectDialog.classList.add('hidden');
@@ -1370,6 +1410,9 @@ function doConnect() {
     connected = false;
     drivetrainStarted = false;
     estopLatched = false;
+    teensyTripped = false;
+    startRequestedAt = 0;
+    neutralizeDriveInput();
     precheckOk = false;
     statusDot.classList.remove('connected');
     statusText.textContent = 'Disconnected';
@@ -1465,6 +1508,18 @@ function handleMessage(raw) {
       addLog(`Tune ${saved ? 'saved' : 'active'} maxPwm=${driveTune.max_pwm} minPwm=${driveTune.min_pwm} ramp=${driveTune.ramp_sec}s turnMax=${driveTune.turn_max_pwm} invL=${driveTune.invert_left ? 1 : 0} invR=${driveTune.invert_right ? 1 : 0} invT=${driveTune.invert_turn ? 1 : 0}${detail ? ` (${detail})` : ''}`);
     } else if (msg.type === 'error') {
       addLog('ERROR: ' + (msg.msg || JSON.stringify(msg)));
+    } else if (msg.type === 'safety') {
+      // Teensy safety lines, forwarded verbatim by the Pi.
+      if (msg.event === 'watchdog') {
+        teensyTripped = true;
+        neutralizeDriveInput();
+        updateIgnitionButton();
+        addLog(`SAFETY watchdog: no drive frames for ${msg.watchdog_ms !== undefined ? msg.watchdog_ms : '?'} ms,`
+             + ` drivetrain ${msg.action === 'disarm' ? 'stopped and disarmed' : 'stopped'}`
+             + ` (trips=${msg.trips !== undefined ? msg.trips : '?'}). Press START to re-arm.`);
+      } else {
+        addLog(`SAFETY ${msg.event || 'event'}${msg.volt !== undefined ? ` (${msg.volt} V)` : ''}`);
+      }
     }
   } catch (e) {
     addLog('RX parse error: ' + raw.slice(0, 80));
@@ -1495,6 +1550,7 @@ function playAudio(file) { sendJson({ type: 'audio', file: file }); addLog('Audi
 // ---- E-STOP ----
 function sendEstop() {
   sendJson({ type: 'estop' });
+  neutralizeDriveInput();
   estopLatched = true;
   drivetrainStarted = false;
   updateIgnitionButton();
@@ -1644,10 +1700,20 @@ function sendDrive() {
   $('tvDriveR').textContent = fwd.toFixed(2);
 }
 
-// Send drive at fixed interval
+// Send drive at fixed interval. From START on, a frame goes out EVERY tick,
+// neutral when untouched: the Teensy watchdog now disarms the drivetrain
+// after 500 ms without a drive frame, so an idle-but-started page must keep
+// feeding it. Streaming starts at the START press (not only once telemetry
+// reports started) so the first frames never wait on the telemetry round
+// trip; before the Pi has started, it answers each with a harmless stop.
+const NEUTRAL_DRIVE_JSON = JSON.stringify({ type: 'drive', x: 0, y: 0, rot: 0 });
+function driveStreamActive() {
+  if (!connected || estopLatched || !precheckOk || teensyTripped) return false;
+  return drivetrainStarted || (Date.now() - startRequestedAt) < START_GRACE_MS;
+}
 driveInterval = setInterval(() => {
-  if (connected && drivetrainStarted && !estopLatched && precheckOk && lastDriveJson) {
-    try { ws.send(lastDriveJson); } catch(e) {}
+  if (driveStreamActive()) {
+    try { ws.send(lastDriveJson || NEUTRAL_DRIVE_JSON); } catch(e) {}
   }
 }, 33); // ~30 Hz
 
@@ -1666,16 +1732,25 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (e.target.tagName === 'INPUT') return;
-  keysDown.add(normalizeKey(e.key));
-  updateKeyDrive();
+  const nk = normalizeKey(e.key);
+  // R1 (re-review 2026-10-07): an OS auto-repeat keydown for a key we are not
+  // tracking is NOT fresh input. A neutralize (START, E-BRK, trip, blur, tab
+  // hide) drops held keys; without this guard the first repeat after it would
+  // re-add a key that was never released and drive an armed rover. A held key
+  // now needs a real release and press. Browsers without e.repeat: inert.
+  if (!(e.repeat && !keysDown.has(nk))) {
+    keysDown.add(nk);
+    updateKeyDrive();
+  }
   const estopKey = keybinds.estop || defaultKeybinds.estop;
-  if (normalizeKey(e.key) === estopKey) { e.preventDefault(); sendEstop(); }
+  if (nk === estopKey) { e.preventDefault(); sendEstop(); }   // E-STOP still fires on repeats
 });
 document.addEventListener('keyup', e => {
   keysDown.delete(normalizeKey(e.key));
   updateKeyDrive();
 });
-function updateKeyDrive() {
+// Drive axes from the keys currently held (no side effects).
+function keyDriveAxes() {
   let y = 0, r = 0;
   const pressed = a => {
     const k = keybinds[a] || defaultKeybinds[a];
@@ -1689,9 +1764,64 @@ function updateKeyDrive() {
   if (pressed('backward') || keysDown.has('ArrowDown'))  y -= 1;
   if (pressed('left')  || keysDown.has('ArrowLeft'))   r -= 1;
   if (pressed('right') || keysDown.has('ArrowRight'))  r += 1;
-  leftY = y; rightX = r;
+  return { y, r };
+}
+function updateKeyDrive() {
+  const k = keyDriveAxes();
+  leftY = k.y; rightX = k.r;
   sendDrive();
 }
+
+// ---- Stale-input guards (review finding 1, 2026-10-07) ----
+// Drop every held or stale drive input. Called on START, E-BRK, a watchdog
+// trip, socket close, window blur and tab hide, so the frames that follow are
+// neutral until FRESH input (a new stick move, key press or gamepad change).
+// Browsers do not deliver keyup to a hidden tab, so a key released while
+// hidden would otherwise stay "held" forever.
+function neutralizeDriveInput() {
+  keysDown.clear();
+  leftY = 0; rightX = 0;
+  lastDriveJson = '';
+  sendDrive();   // lastDriveJson becomes the neutral frame; readouts go to 0
+}
+
+function liveGamepad() {
+  const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (const g of gps) if (g && g.connected) return g;
+  return null;
+}
+
+// Neutral-to-arm check, read from the LIVE sources (not from the cleared
+// drive state): drive keys held, either touch/mouse stick off-centre, or a
+// gamepad stick off-centre. Same deadbands as sendDrive and pollGamepad.
+// Returns the names of the controls that are off-centre (R2: the refusal
+// message says which), empty when everything is neutral.
+function heldControls() {
+  const held = [];
+  const k = keyDriveAxes();
+  if (k.y !== 0 || k.r !== 0) held.push('keys');
+  if (Math.abs(joyL.y) >= 0.04) held.push('left stick');
+  if (Math.abs(joyR.x) >= 0.04) held.push('right stick');
+  const gp = liveGamepad();
+  if (gp) {
+    for (const ax of [1, 2]) {
+      if (Math.abs(gp.axes[ax] || 0) >= 0.08) held.push(`gamepad axis ${ax}`);
+    }
+  }
+  if (!held.length && (Math.abs(leftY) >= 0.04 || Math.abs(rightX) >= 0.04)) held.push('drive input');
+  return held;
+}
+function liveInputNeutral() { return heldControls().length === 0; }
+
+// Input may have been lost (focus or tab gone): release held keys and send
+// one neutral frame at once rather than waiting for the next 33 ms tick.
+function releaseHeldInput() {
+  neutralizeDriveInput();
+  if (connected && ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.send(NEUTRAL_DRIVE_JSON); } catch (e) {}
+  }
+}
+window.addEventListener('blur', releaseHeldInput);
 
 // ============================================================
 //  GAMEPAD API — use a physical gamepad/controller
@@ -1747,6 +1877,7 @@ window.addEventListener('beforeunload', () => {
 
 // ---- Visibility change: stop when tab hidden ----
 document.addEventListener('visibilitychange', () => {
+  releaseHeldInput();   // either direction: keys released while hidden were never seen
   if (document.hidden && connected) {
     sendEstop();
     addLog('Tab hidden — E-STOP sent');
